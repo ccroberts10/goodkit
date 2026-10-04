@@ -209,7 +209,7 @@ async function login() {
   if (!key) return;
   $('authErr').style.display = 'none';
   try {
-    const res = await fetch(`/admin/overview?adminKey=${encodeURIComponent(key)}`);
+    const res = await fetch(`https://dbpmarketplace-production.up.railway.app/admin/overview?adminKey=${encodeURIComponent(key)}`);
     if (res.status === 401) { $('authErr').style.display = 'block'; return; }
     DATA = await res.json();
     if (!DATA.success) throw new Error(DATA.error);
@@ -223,7 +223,7 @@ async function login() {
 async function refresh() {
   $('loadingBanner').style.display = 'block';
   try {
-    const res = await fetch(`/admin/overview?adminKey=${encodeURIComponent(ADMIN_KEY)}`);
+    const res = await fetch(`https://dbpmarketplace-production.up.railway.app/admin/overview?adminKey=${encodeURIComponent(ADMIN_KEY)}`);
     DATA = await res.json();
     render();
     toast('Refreshed');
@@ -354,7 +354,7 @@ function renderListings() {
 async function payoutTeam(teamId, teamName, balance) {
   if (!confirm(`Mark ${teamName} as paid out? (${fmt(balance)})\n\nMake sure you've already sent the payment to their payout email before confirming.`)) return;
   try {
-    const res = await fetch('/admin/ccx/payout', {
+    const res = await fetch('https://dbpmarketplace-production.up.railway.app/admin/ccx/payout', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ adminKey: ADMIN_KEY, team_id: teamId })
