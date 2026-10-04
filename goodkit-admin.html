@@ -1,0 +1,378 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>GoodKit Admin</title>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;900&family=JetBrains+Mono:wght@400;600&display=swap">
+<style>
+  :root {
+    --bg: #0a0a0a; --bg2: #111110; --bg3: #1a1a18;
+    --fg: #f5f5f0; --fg2: #888880; --fg3: #555550;
+    --accent: #FF5C1A; --blue: #1A6FFF; --green: #22c55e;
+    --yellow: #F2C12E; --red: #ef4444;
+    --border: #2a2a28;
+    color-scheme: dark;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { font-family: 'Inter', system-ui, sans-serif; background: var(--bg); color: var(--fg); min-height: 100vh; }
+  code, .mono { font-family: 'JetBrains Mono', monospace; }
+
+  /* Layout */
+  .shell { display: flex; min-height: 100vh; }
+  .sidebar { width: 200px; flex-shrink: 0; border-right: 1px solid var(--border); padding: 24px 0; display: flex; flex-direction: column; gap: 2px; position: sticky; top: 0; height: 100vh; }
+  .main { flex: 1; padding: 28px 24px 64px; min-width: 0; }
+
+  /* Sidebar */
+  .logo { padding: 0 18px 20px; font-size: 16px; font-weight: 900; letter-spacing: -0.03em; border-bottom: 1px solid var(--border); margin-bottom: 10px; }
+  .logo span { color: var(--accent); }
+  .logo small { display: block; font-size: 10px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.1em; color: var(--fg2); margin-top: 2px; }
+  .nav-item { padding: 9px 18px; font-size: 13px; font-weight: 600; color: var(--fg2); cursor: pointer; border-radius: 0; transition: all .12s; display: flex; align-items: center; gap: 8px; }
+  .nav-item:hover { color: var(--fg); background: var(--bg3); }
+  .nav-item.active { color: var(--fg); background: var(--bg3); border-left: 2px solid var(--accent); padding-left: 16px; }
+  .nav-icon { font-size: 14px; }
+
+  /* Auth gate */
+  #authGate { display: flex; flex-direction: column; align-items: center; justify-content: center; min-height: 100vh; gap: 16px; }
+  #authGate h2 { font-size: 20px; font-weight: 800; }
+  .auth-form { display: flex; gap: 8px; }
+  .auth-input { background: var(--bg2); border: 1px solid var(--border); color: var(--fg); padding: 10px 14px; border-radius: 7px; font-size: 14px; font-family: inherit; width: 280px; outline: none; }
+  .auth-input:focus { border-color: var(--accent); }
+  .auth-btn { background: var(--accent); color: #fff; border: none; border-radius: 7px; padding: 10px 18px; font-size: 14px; font-weight: 700; font-family: inherit; cursor: pointer; }
+
+  /* Sections */
+  .section { display: none; }
+  .section.active { display: block; }
+  .section-title { font-size: 20px; font-weight: 900; letter-spacing: -0.02em; margin-bottom: 20px; }
+
+  /* Stat tiles */
+  .tiles { display: grid; grid-template-columns: repeat(auto-fill, minmax(160px, 1fr)); gap: 10px; margin-bottom: 24px; }
+  .tile { background: var(--bg2); border: 1px solid var(--border); border-radius: 10px; padding: 14px 16px; }
+  .tile-n { font-size: 26px; font-weight: 900; letter-spacing: -0.04em; font-variant-numeric: tabular-nums; line-height: 1; margin-bottom: 4px; }
+  .tile-n.green { color: var(--green); }
+  .tile-n.orange { color: var(--accent); }
+  .tile-n.blue { color: var(--blue); }
+  .tile-n.yellow { color: var(--yellow); }
+  .tile-l { font-size: 10px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.08em; color: var(--fg2); }
+
+  /* Tables */
+  .table-wrap { background: var(--bg2); border: 1px solid var(--border); border-radius: 10px; overflow: hidden; margin-bottom: 20px; }
+  .table-head { padding: 12px 16px; border-bottom: 1px solid var(--border); font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.08em; color: var(--fg2); display: flex; justify-content: space-between; align-items: center; }
+  table { width: 100%; border-collapse: collapse; font-size: 13px; }
+  th { text-align: left; padding: 10px 14px; font-size: 10px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.08em; color: var(--fg2); border-bottom: 1px solid var(--border); }
+  td { padding: 10px 14px; border-bottom: 1px solid var(--border); vertical-align: middle; }
+  tr:last-child td { border-bottom: none; }
+  tr:hover td { background: var(--bg3); }
+
+  /* Badges */
+  .badge { display: inline-block; font-size: 10px; font-weight: 700; letter-spacing: 0.06em; text-transform: uppercase; padding: 3px 7px; border-radius: 4px; }
+  .badge-green { background: rgba(34,197,94,.15); color: var(--green); }
+  .badge-orange { background: rgba(255,92,26,.15); color: var(--accent); }
+  .badge-blue { background: rgba(26,111,255,.15); color: var(--blue); }
+  .badge-gray { background: var(--bg3); color: var(--fg2); }
+  .badge-yellow { background: rgba(242,193,46,.15); color: var(--yellow); }
+
+  /* Buttons */
+  .btn { display: inline-block; padding: 7px 14px; border-radius: 6px; font-size: 12px; font-weight: 700; font-family: inherit; cursor: pointer; border: none; transition: opacity .12s; }
+  .btn:hover { opacity: .82; }
+  .btn-green { background: var(--green); color: #000; }
+  .btn-orange { background: var(--accent); color: #fff; }
+  .btn-ghost { background: var(--bg3); color: var(--fg2); border: 1px solid var(--border); }
+  .btn:disabled { opacity: .4; cursor: default; }
+
+  /* CCX team rows */
+  .team-row td:first-child { font-weight: 700; }
+  .balance-big { font-size: 15px; font-weight: 900; font-variant-numeric: tabular-nums; color: var(--green); }
+  .balance-zero { color: var(--fg3); }
+
+  /* Empty */
+  .empty { padding: 32px; text-align: center; color: var(--fg2); font-size: 13px; }
+
+  /* Toast */
+  #toast { position: fixed; bottom: 24px; right: 24px; background: var(--fg); color: var(--bg); border-radius: 8px; padding: 10px 16px; font-size: 13px; font-weight: 600; transform: translateY(60px); transition: transform .2s; pointer-events: none; z-index: 100; }
+  #toast.show { transform: translateY(0); }
+  #toast.err { background: var(--red); color: #fff; }
+
+  /* Loading */
+  .spinner { width: 20px; height: 20px; border: 2px solid var(--border); border-top-color: var(--accent); border-radius: 50%; animation: spin .7s linear infinite; display: inline-block; vertical-align: middle; margin-right: 8px; }
+  @keyframes spin { to { transform: rotate(360deg); } }
+
+  @media (max-width: 640px) {
+    .shell { flex-direction: column; }
+    .sidebar { width: 100%; height: auto; flex-direction: row; flex-wrap: wrap; position: static; border-right: none; border-bottom: 1px solid var(--border); padding: 12px 8px; }
+    .logo { border-bottom: none; margin-bottom: 0; padding: 6px 10px; }
+    .nav-item { padding: 7px 10px; border-left: none !important; }
+    .nav-item.active { border-bottom: 2px solid var(--accent); padding-bottom: 5px; }
+    .main { padding: 16px 12px 48px; }
+  }
+</style>
+</head>
+<body>
+
+<!-- Auth gate -->
+<div id="authGate">
+  <div class="logo">goodkit<span>.</span><small>Admin</small></div>
+  <h2>Enter admin key</h2>
+  <div class="auth-form">
+    <input class="auth-input" type="password" id="keyInput" placeholder="ADMIN_KEY" autocomplete="off">
+    <button class="auth-btn" onclick="login()">Enter</button>
+  </div>
+  <div id="authErr" style="color:var(--red);font-size:13px;display:none;">Invalid key.</div>
+</div>
+
+<!-- Main shell -->
+<div class="shell" id="mainShell" style="display:none;">
+  <div class="sidebar">
+    <div class="logo">goodkit<span>.</span><small>Admin</small></div>
+    <div class="nav-item active" onclick="nav('overview')" id="nav-overview"><span class="nav-icon">📊</span> Overview</div>
+    <div class="nav-item" onclick="nav('ccx')" id="nav-ccx"><span class="nav-icon">🎓</span> CCX Teams</div>
+    <div class="nav-item" onclick="nav('sales')" id="nav-sales"><span class="nav-icon">💳</span> Sales</div>
+    <div class="nav-item" onclick="nav('listings')" id="nav-listings"><span class="nav-icon">📦</span> Listings</div>
+    <div style="flex:1;"></div>
+    <div class="nav-item" onclick="refresh()" style="color:var(--fg3);font-size:12px;"><span class="nav-icon">↻</span> Refresh</div>
+    <div class="nav-item" onclick="logout()" style="color:var(--fg3);font-size:12px;"><span class="nav-icon">→</span> Sign out</div>
+  </div>
+
+  <div class="main">
+    <div id="loadingBanner" style="color:var(--fg2);font-size:13px;margin-bottom:16px;display:none;">
+      <span class="spinner"></span>Loading…
+    </div>
+
+    <!-- OVERVIEW -->
+    <div class="section active" id="section-overview">
+      <div class="section-title">Overview</div>
+      <div class="tiles" id="overviewTiles"></div>
+      <div id="overviewCcxAlert"></div>
+      <div class="table-wrap">
+        <div class="table-head">Recent sales <span id="salesBadge"></span></div>
+        <div id="recentSalesTable"></div>
+      </div>
+    </div>
+
+    <!-- CCX TEAMS -->
+    <div class="section" id="section-ccx">
+      <div class="section-title">CCX Teams</div>
+      <div class="table-wrap">
+        <div class="table-head">All teams <span id="teamsBadge"></span></div>
+        <div id="ccxTeamsTable"></div>
+      </div>
+    </div>
+
+    <!-- SALES -->
+    <div class="section" id="section-sales">
+      <div class="section-title">All Sales</div>
+      <div class="table-wrap">
+        <div class="table-head">Sales history</div>
+        <div id="allSalesTable"></div>
+      </div>
+    </div>
+
+    <!-- LISTINGS -->
+    <div class="section" id="section-listings">
+      <div class="section-title">Listings</div>
+      <div class="table-wrap">
+        <div class="table-head">Active & recent listings</div>
+        <div id="listingsTable"></div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div id="toast"></div>
+
+<script>
+let ADMIN_KEY = '';
+let DATA = null;
+
+const $ = id => document.getElementById(id);
+const fmt = n => '$' + Number(n).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+const fmtShort = n => {
+  if (n >= 1000) return '$' + (n/1000).toFixed(1) + 'k';
+  return '$' + n.toFixed(0);
+};
+const fmtDate = str => str ? new Date(str).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: '2-digit' }) : '—';
+
+function toast(msg, err = false) {
+  const t = $('toast');
+  t.textContent = msg;
+  t.className = err ? 'err show' : 'show';
+  setTimeout(() => t.className = '', 2800);
+}
+
+function statusBadge(s) {
+  const map = { complete: 'green', paid_out: 'blue', pending: 'gray', delivered: 'yellow', approved: 'green', sold: 'blue', deleted: 'gray' };
+  return `<span class="badge badge-${map[s] || 'gray'}">${s}</span>`;
+}
+
+async function login() {
+  const key = $('keyInput').value.trim();
+  if (!key) return;
+  $('authErr').style.display = 'none';
+  try {
+    const res = await fetch(`/admin/overview?adminKey=${encodeURIComponent(key)}`);
+    if (res.status === 401) { $('authErr').style.display = 'block'; return; }
+    DATA = await res.json();
+    if (!DATA.success) throw new Error(DATA.error);
+    ADMIN_KEY = key;
+    $('authGate').style.display = 'none';
+    $('mainShell').style.display = 'flex';
+    render();
+  } catch(e) { $('authErr').style.display = 'block'; }
+}
+
+async function refresh() {
+  $('loadingBanner').style.display = 'block';
+  try {
+    const res = await fetch(`/admin/overview?adminKey=${encodeURIComponent(ADMIN_KEY)}`);
+    DATA = await res.json();
+    render();
+    toast('Refreshed');
+  } catch(e) { toast('Refresh failed', true); }
+  $('loadingBanner').style.display = 'none';
+}
+
+function logout() {
+  ADMIN_KEY = ''; DATA = null;
+  $('mainShell').style.display = 'none';
+  $('authGate').style.display = 'flex';
+  $('keyInput').value = '';
+}
+
+function nav(id) {
+  document.querySelectorAll('.section').forEach(s => s.classList.remove('active'));
+  document.querySelectorAll('.nav-item').forEach(n => n.classList.remove('active'));
+  $('section-' + id).classList.add('active');
+  $('nav-' + id).classList.add('active');
+}
+
+function render() {
+  if (!DATA) return;
+  renderOverview();
+  renderCcx();
+  renderSales();
+  renderListings();
+}
+
+function renderOverview() {
+  const s = DATA.stats;
+  $('overviewTiles').innerHTML = `
+    <div class="tile"><div class="tile-n green">${fmtShort(s.gmv)}</div><div class="tile-l">Total GMV</div></div>
+    <div class="tile"><div class="tile-n orange">${fmtShort(s.platform_gross)}</div><div class="tile-l">GoodKit revenue</div></div>
+    <div class="tile"><div class="tile-n blue">${fmtShort(s.seller_owed)}</div><div class="tile-l">Seller payouts owed</div></div>
+    <div class="tile"><div class="tile-n yellow">${fmtShort(s.ccx_owed)}</div><div class="tile-l">CCX funds owed</div></div>
+    <div class="tile"><div class="tile-n">${s.sale_count}</div><div class="tile-l">Sales</div></div>
+    <div class="tile"><div class="tile-n">${s.listing_count}</div><div class="tile-l">Active listings</div></div>
+    <div class="tile"><div class="tile-n">${s.team_count}</div><div class="tile-l">CCX teams</div></div>
+  `;
+
+  // CCX alert if any team has balance ≥ $25
+  const payable = DATA.ccx_teams.filter(t => t.fund_balance >= 25);
+  if (payable.length) {
+    $('overviewCcxAlert').innerHTML = `
+      <div style="background:rgba(242,193,46,.1);border:1px solid rgba(242,193,46,.3);border-radius:8px;padding:12px 16px;margin-bottom:16px;font-size:13px;">
+        <strong style="color:var(--yellow);">⚠ ${payable.length} CCX team${payable.length>1?'s':''} ready for payout</strong>
+        — ${payable.map(t => `${t.team_name} (${fmt(t.fund_balance)})`).join(', ')}
+        <span style="margin-left:8px;cursor:pointer;color:var(--blue);" onclick="nav('ccx')">View teams →</span>
+      </div>`;
+  } else {
+    $('overviewCcxAlert').innerHTML = '';
+  }
+
+  const rows = DATA.recent_sales.slice(0, 15);
+  if (!rows.length) { $('recentSalesTable').innerHTML = '<div class="empty">No sales yet.</div>'; return; }
+  $('salesBadge').innerHTML = `<span class="badge badge-gray">${rows.length}</span>`;
+  $('recentSalesTable').innerHTML = `<table>
+    <tr><th>Item</th><th>Seller</th><th>Amount</th><th>GoodKit</th><th>CCX</th><th>Status</th><th>Date</th></tr>
+    ${rows.map(s => `<tr>
+      <td style="max-width:180px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">${s.title || '—'}</td>
+      <td style="color:var(--fg2);">${s.seller_name || '—'}</td>
+      <td class="mono">${fmt(s.amount)}</td>
+      <td class="mono" style="color:var(--accent);">${fmt(s.platform_payout)}</td>
+      <td class="mono" style="color:var(--yellow);">${s.ccx_fund > 0 ? fmt(s.ccx_fund) : '—'}</td>
+      <td>${statusBadge(s.status)}</td>
+      <td style="color:var(--fg2);">${fmtDate(s.created_at)}</td>
+    </tr>`).join('')}
+  </table>`;
+}
+
+function renderCcx() {
+  const teams = DATA.ccx_teams;
+  $('teamsBadge').innerHTML = `<span class="badge badge-gray">${teams.length}</span>`;
+  if (!teams.length) { $('ccxTeamsTable').innerHTML = '<div class="empty">No CCX teams registered yet.</div>'; return; }
+  $('ccxTeamsTable').innerHTML = `<table>
+    <tr><th>Team</th><th>School</th><th>Code</th><th>Balance</th><th>Total earned</th><th>Payout email</th><th>Status</th><th></th></tr>
+    ${teams.map(t => `<tr class="team-row">
+      <td>${t.team_name}</td>
+      <td style="color:var(--fg2);">${t.school}</td>
+      <td><code class="mono" style="font-size:13px;letter-spacing:0.1em;">${t.code}</code></td>
+      <td><span class="${t.fund_balance > 0 ? 'balance-big' : 'balance-zero'}">${fmt(t.fund_balance)}</span></td>
+      <td class="mono" style="color:var(--fg2);">${fmt(t.total_earned)}</td>
+      <td style="font-size:12px;color:var(--fg2);">${t.payout_email}</td>
+      <td>${statusBadge(t.status)}</td>
+      <td>${t.fund_balance >= 25
+        ? `<button class="btn btn-green" onclick="payoutTeam('${t.id}','${t.team_name}',${t.fund_balance})">Pay out ${fmt(t.fund_balance)}</button>`
+        : `<span style="font-size:11px;color:var(--fg3);">${t.fund_balance > 0 ? 'Under $25 min' : 'No balance'}</span>`
+      }</td>
+    </tr>`).join('')}
+  </table>`;
+}
+
+function renderSales() {
+  const sales = DATA.recent_sales;
+  if (!sales.length) { $('allSalesTable').innerHTML = '<div class="empty">No sales yet.</div>'; return; }
+  $('allSalesTable').innerHTML = `<table>
+    <tr><th>Item</th><th>Seller</th><th>Total</th><th>Seller gets</th><th>GoodKit</th><th>CCX fund</th><th>Status</th><th>Date</th></tr>
+    ${sales.map(s => `<tr>
+      <td style="max-width:160px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">${s.title || '—'}</td>
+      <td style="color:var(--fg2);font-size:12px;">${s.seller_name || '—'}</td>
+      <td class="mono">${fmt(s.amount)}</td>
+      <td class="mono" style="color:var(--green);">${fmt(s.seller_payout)}</td>
+      <td class="mono" style="color:var(--accent);">${fmt(s.platform_payout)}</td>
+      <td class="mono" style="color:var(--yellow);">${s.ccx_fund > 0 ? fmt(s.ccx_fund) : '—'}</td>
+      <td>${statusBadge(s.status)}</td>
+      <td style="color:var(--fg2);">${fmtDate(s.created_at)}</td>
+    </tr>`).join('')}
+  </table>`;
+}
+
+function renderListings() {
+  const listings = DATA.listings;
+  if (!listings.length) { $('listingsTable').innerHTML = '<div class="empty">No listings.</div>'; return; }
+  $('listingsTable').innerHTML = `<table>
+    <tr><th>Title</th><th>Seller</th><th>Price</th><th>CCX</th><th>Status</th><th>Date</th></tr>
+    ${listings.map(l => `<tr>
+      <td style="max-width:200px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;font-weight:600;">${l.title}</td>
+      <td style="color:var(--fg2);font-size:12px;">${l.seller_name || '—'}</td>
+      <td class="mono">${fmt(l.price)}</td>
+      <td>${l.ccx_code ? `<code class="mono" style="color:var(--yellow);font-size:12px;">${l.ccx_code}</code>` : '<span style="color:var(--fg3);">—</span>'}</td>
+      <td>${statusBadge(l.status)}</td>
+      <td style="color:var(--fg2);">${fmtDate(l.created_at)}</td>
+    </tr>`).join('')}
+  </table>`;
+}
+
+async function payoutTeam(teamId, teamName, balance) {
+  if (!confirm(`Mark ${teamName} as paid out? (${fmt(balance)})\n\nMake sure you've already sent the payment to their payout email before confirming.`)) return;
+  try {
+    const res = await fetch('/admin/ccx/payout', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ adminKey: ADMIN_KEY, team_id: teamId })
+    });
+    const data = await res.json();
+    if (data.success) {
+      toast(`✓ ${data.team_name} marked paid — ${fmt(data.amount_paid)} → ${data.payout_email}`);
+      await refresh();
+    } else {
+      toast(data.error || 'Payout failed', true);
+    }
+  } catch(e) { toast('Network error', true); }
+}
+
+// Enter key on password field
+document.addEventListener('keydown', e => {
+  if (e.key === 'Enter' && $('authGate').style.display !== 'none') login();
+});
+</script>
+</body>
+</html>

@@ -1273,6 +1273,97 @@ app.get('/ccx', (req, res) => {
 
 // ── ADMIN ─────────────────────────────────────────────────────────────────────
 
+// GET /admin — admin dashboard page
+app.get('/admin', (req, res) => {
+  res.sendFile(path.join(__dirname, 'goodkit-admin.html'));
+});
+
+// GET /admin/overview — full dashboard data in one shot
+app.get('/admin/overview', (req, res) => {
+  const { adminKey } = req.query;
+  if (adminKey !== process.env.ADMIN_KEY) return res.status(401).json({ error: 'Unauthorized' });
+  try {
+    const sales = db.prepare(`
+      SELECT s.*, l.title, l.seller_email, l.seller_name, l.ccx_code as listing_ccx
+      FROM sales s JOIN listings l ON s.listing_id=l.id
+      ORDER BY s.created_at DESC LIMIT 100
+    `).all();
+
+    const completeSales = sales.filter(s => s.status !== 'pending');
+    const gmv           = completeSales.reduce((sum, s) => sum + s.amount, 0);
+    const platformGross = completeSales.reduce((sum, s) => sum + s.platform_payout, 0);
+    const sellerOwed    = db.prepare("SELECT SUM(seller_payout) as t FROM sales WHERE status='complete'").get().t || 0;
+    const ccxOwed       = db.prepare("SELECT SUM(fund_balance) as t FROM ccx_teams WHERE fund_balance > 0").get().t || 0;
+
+    const teams = db.prepare("SELECT * FROM ccx_teams ORDER BY fund_balance DESC").all();
+    const listings = db.prepare("SELECT id,title,seller_name,seller_email,status,price,created_at,ccx_code FROM listings ORDER BY created_at DESC LIMIT 50").all();
+
+    res.json({
+      success: true,
+      stats: {
+        gmv:            gmv / 100,
+        platform_gross: platformGross / 100,
+        seller_owed:    sellerOwed / 100,
+        ccx_owed:       ccxOwed / 100,
+        sale_count:     completeSales.length,
+        listing_count:  db.prepare("SELECT COUNT(*) as c FROM listings WHERE status='approved'").get().c,
+        team_count:     teams.length
+      },
+      recent_sales: sales.slice(0, 50).map(s => ({
+        id:          s.id,
+        title:       s.title,
+        seller_name: s.seller_name,
+        amount:      s.amount / 100,
+        seller_payout: s.seller_payout / 100,
+        platform_payout: s.platform_payout / 100,
+        ccx_code:    s.ccx_code,
+        ccx_fund:    (s.ccx_fund || 0) / 100,
+        status:      s.status,
+        created_at:  s.created_at
+      })),
+      ccx_teams: teams.map(t => ({
+        id:            t.id,
+        team_name:     t.team_name,
+        school:        t.school,
+        code:          t.code,
+        captain_name:  t.captain_name,
+        captain_email: t.captain_email,
+        payout_email:  t.payout_email || t.captain_email,
+        fund_balance:  t.fund_balance / 100,
+        total_earned:  t.total_earned / 100,
+        status:        t.status,
+        created_at:    t.created_at
+      })),
+      listings: listings.map(l => ({
+        id:           l.id,
+        title:        l.title,
+        seller_name:  l.seller_name,
+        seller_email: l.seller_email,
+        status:       l.status,
+        price:        l.price / 100,
+        ccx_code:     l.ccx_code,
+        created_at:   l.created_at
+      }))
+    });
+  } catch(err) { res.status(500).json({ error: err.message }); }
+});
+
+// POST /admin/ccx/payout — mark a team fund as paid out
+app.post('/admin/ccx/payout', (req, res) => {
+  const { adminKey, team_id, note } = req.body;
+  if (adminKey !== process.env.ADMIN_KEY) return res.status(401).json({ error: 'Unauthorized' });
+  try {
+    const team = db.prepare("SELECT * FROM ccx_teams WHERE id=?").get(team_id);
+    if (!team) return res.status(404).json({ error: 'Team not found' });
+    if (team.fund_balance <= 0) return res.status(400).json({ error: 'No balance to pay out' });
+    const amount = team.fund_balance;
+    db.prepare("INSERT INTO ccx_payouts (id,team_id,amount,status,created_at,paid_at) VALUES (?,?,?,'paid',datetime('now'),datetime('now'))")
+      .run(uuidv4(), team_id, amount);
+    db.prepare("UPDATE ccx_teams SET fund_balance=0 WHERE id=?").run(team_id);
+    res.json({ success: true, team_name: team.team_name, amount_paid: amount / 100, payout_email: team.payout_email || team.captain_email });
+  } catch(err) { res.status(500).json({ error: err.message }); }
+});
+
 app.post('/admin/release-payouts', async (req, res) => {
   const { adminKey } = req.body;
   if (adminKey !== process.env.ADMIN_KEY) return res.status(401).json({ error: 'Unauthorized' });
@@ -1371,7 +1462,7 @@ async function runBackup() {
            <p style="font-size:14px;color:#1A1A14;margin:0 0 6px;"><strong>Listings:</strong> ${lc}</p>
            <p style="font-size:14px;color:#1A1A14;margin:0 0 6px;"><strong>Sales:</strong> ${sc}</p>
            <p style="font-size:14px;color:#1A1A14;margin:0 0 6px;"><strong>Total paid out to sellers:</strong> $${(po/100).toFixed(2)}</p>
-           <p style="font-size:14px;color:#FF5C1A;margin:0;"><strong>Platform revenue (12% fees):</strong> $${(pr/100).toFixed(2)}</p>
+           <p style="font-size:14px;color:#FF5C1A;margin:0;"><strong>Platform revenue (15% fees):</strong> $${(pr/100).toFixed(2)}</p>
          </div>`
       ));
     }
