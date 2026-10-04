@@ -1278,8 +1278,17 @@ app.get('/admin', (req, res) => {
   res.sendFile(path.join(__dirname, 'goodkit-admin.html'));
 });
 
+// CORS preflight for admin endpoints (allows claude.ai artifact to call Railway)
+app.options('/admin/:path*', (req, res) => {
+  res.set('Access-Control-Allow-Origin', '*');
+  res.set('Access-Control-Allow-Methods', 'GET,POST,OPTIONS');
+  res.set('Access-Control-Allow-Headers', 'Content-Type');
+  res.sendStatus(204);
+});
+
 // GET /admin/overview — full dashboard data in one shot
 app.get('/admin/overview', (req, res) => {
+  res.set('Access-Control-Allow-Origin', '*');
   const { adminKey } = req.query;
   if (adminKey !== process.env.ADMIN_KEY) return res.status(401).json({ error: 'Unauthorized' });
   try {
@@ -1350,6 +1359,7 @@ app.get('/admin/overview', (req, res) => {
 
 // POST /admin/ccx/payout — mark a team fund as paid out
 app.post('/admin/ccx/payout', (req, res) => {
+  res.set('Access-Control-Allow-Origin', '*');
   const { adminKey, team_id, note } = req.body;
   if (adminKey !== process.env.ADMIN_KEY) return res.status(401).json({ error: 'Unauthorized' });
   try {
