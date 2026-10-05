@@ -218,6 +218,33 @@ db.exec(`
   `ALTER TABLE sales ADD COLUMN ccx_code TEXT DEFAULT NULL`,
 ].forEach(sql => { try { db.exec(sql); } catch(e) {} });
 
+// Shop consignment migrations
+[
+  `ALTER TABLE seller_sessions ADD COLUMN account_type TEXT DEFAULT 'individual'`,
+  `ALTER TABLE seller_sessions ADD COLUMN shop_slug TEXT DEFAULT NULL`,
+  `ALTER TABLE listings ADD COLUMN account_type TEXT DEFAULT 'individual'`,
+].forEach(sql => { try { db.exec(sql); } catch(e) {} });
+
+// Shop accounts table
+db.exec(`
+  CREATE TABLE IF NOT EXISTS shop_accounts (
+    id TEXT PRIMARY KEY,
+    shop_name TEXT NOT NULL,
+    slug TEXT NOT NULL UNIQUE,
+    contact_name TEXT NOT NULL,
+    contact_email TEXT NOT NULL UNIQUE,
+    stripe_account_id TEXT,
+    ship_name TEXT,
+    ship_street1 TEXT,
+    ship_city TEXT,
+    ship_state TEXT,
+    ship_zip TEXT,
+    ship_phone TEXT,
+    status TEXT DEFAULT 'active',
+    created_at TEXT DEFAULT (datetime('now'))
+  );
+`);
+
 // CCX tables (full create — safe with IF NOT EXISTS)
 db.exec(`
   CREATE TABLE IF NOT EXISTS ccx_teams (
@@ -273,18 +300,21 @@ function getLabelTier(weightOz) {
 }
 
 // ── FEE STRUCTURE ────────────────────────────────────────────────────────────
-// Seller keeps 85%. GoodKit takes 15% of item price only.
-//   - 13% goes to GoodKit platform
-//   - 2% goes to CCX team fund (if listing has a ccx_code)
+// Two-tier model:
+//   Individual sellers: 85% seller / 15% GoodKit (13% platform + 2% CCX if applicable)
+//   Shop consignment:   65% seller / 35% GoodKit (shops offloading stale inventory)
 // Shipping passes through at cost (flat tier price charged to buyer).
-// Stripe fee (~2.9% + $0.30) comes out of platform's 13%.
-function calculateSplit(itemPriceCents, shippingCents, ccxCode) {
+// Stripe fee (~2.9% + $0.30) comes out of GoodKit's platform share.
+function calculateSplit(itemPriceCents, shippingCents, ccxCode, accountType) {
   shippingCents = shippingCents || 0;
+  const isShop        = accountType === 'shop';
+  const sellerPct     = isShop ? 65 : 85;
+  const platformPct   = isShop ? 35 : 15;
   const totalCents    = itemPriceCents + shippingCents;
   const stripeFee     = Math.round(totalCents * 0.029 + 30);
-  const platformFee   = Math.round(itemPriceCents * 0.15);   // 15% of item only
-  const ccxFund       = ccxCode ? Math.round(itemPriceCents * 0.02) : 0; // 2% to team fund
-  const goodkitNet    = platformFee - ccxFund;               // 13% to GoodKit
+  const platformFee   = Math.round(itemPriceCents * (platformPct / 100));
+  const ccxFund       = (!isShop && ccxCode) ? Math.round(itemPriceCents * 0.02) : 0; // 2% CCX, individual only
+  const goodkitNet    = platformFee - ccxFund;
   const sellerNet     = itemPriceCents - platformFee + shippingCents;
   const platformNet   = Math.max(goodkitNet - stripeFee, 0);
   return {
@@ -296,8 +326,9 @@ function calculateSplit(itemPriceCents, shippingCents, ccxCode) {
     ccxFund:      ccxFund        / 100,
     platformNet:  platformNet    / 100,
     stripeFee:    stripeFee      / 100,
-    sellerPct:    85,
-    platformPct:  15,
+    sellerPct,
+    platformPct,
+    accountType:  accountType || 'individual',
     ccxCode:      ccxCode || null
   };
 }
@@ -606,13 +637,15 @@ app.get('/seller/portal', (req, res) => {
     if (!session || session.role !== 'seller') return res.status(401).json({ error: 'Invalid session' });
     if (new Date(session.expires_at) < new Date()) return res.status(401).json({ error: 'Session expired' });
     const email    = session.email;
+    const accountType = session.account_type || 'individual';
+    const shopSlug    = session.shop_slug || null;
     const listings = db.prepare("SELECT * FROM listings WHERE seller_email = ? ORDER BY created_at DESC").all(email)
       .map(l => ({
         ...l,
         photos: JSON.parse(l.photos || '[]'),
         price:  l.price / 100,
         shipping_estimate: (l.shipping_estimate || 0) / 100,
-        split:  calculateSplit(l.price, l.shipping_estimate || 0),
+        split:  calculateSplit(l.price, l.shipping_estimate || 0, null, accountType),
         label:  getLabelTier(l.weight_oz)
       }));
     const sales = db.prepare("SELECT s.*, l.title, l.photos FROM sales s JOIN listings l ON s.listing_id=l.id WHERE l.seller_email=? ORDER BY s.created_at DESC").all(email)
@@ -653,6 +686,14 @@ app.get('/seller/portal', (req, res) => {
           } : null
         };
       })(),
+      account: {
+        type:       accountType,
+        isShop:     accountType === 'shop',
+        shopSlug:   shopSlug,
+        sellerPct:  accountType === 'shop' ? 65 : 85,
+        platformPct: accountType === 'shop' ? 35 : 15,
+        storefrontUrl: shopSlug ? `${SITE_URL}/shop/${shopSlug}` : null
+      },
       stats: {
         totalEarned:    sales.filter(s => s.status === 'paid_out').reduce((sum, s) => sum + s.seller_payout, 0),
         pendingPayout:  sales.filter(s => s.status === 'delivered').reduce((sum, s) => sum + s.seller_payout, 0),
@@ -1622,7 +1663,7 @@ app.get('/listing/:id', (req, res) => {
       </div>
       <div class="cta-bar">
         <a class="cta-btn" href="${SITE_URL}/goodkit-marketplace.html#${listing.id}">Buy on GoodKit →</a>
-        <div class="cta-sub">Secure checkout · Shippo-powered shipping · Seller keeps 88%</div>
+        <div class="cta-sub">Secure checkout · Shippo-powered shipping · Seller keeps 85%</div>
       </div>
       ${keywords ? `<div class="section-label" style="margin-top:28px">Tags</div><div class="keywords-list">${keywords}</div>` : ''}
     </div>
@@ -1671,6 +1712,245 @@ ${urls.map(u => `  <url>
 app.get('/robots.txt', (req, res) => {
   res.setHeader('Content-Type', 'text/plain');
   res.send(`User-agent: *\nAllow: /\nDisallow: /admin/\nDisallow: /seller/\nSitemap: ${SITE_URL}/sitemap.xml\n`);
+});
+
+// ── SHOP CONSIGNMENT ─────────────────────────────────────────────────────────
+// Admin creates shop accounts; shops get login + public storefront at /shop/:slug
+// Fee structure: 65% seller / 35% platform (no CCX program for shops)
+
+// POST /admin/shops/create — create a shop seller account and send magic link
+app.post('/admin/shops/create', (req, res) => {
+  const key = req.headers['x-admin-key'] || req.query.key;
+  if (key !== process.env.ADMIN_KEY) return res.status(401).json({ error: 'Unauthorized' });
+
+  const { shop_name, slug, contact_name, contact_email,
+          ship_name, ship_street1, ship_city, ship_state, ship_zip, ship_phone } = req.body;
+
+  if (!shop_name || !slug || !contact_name || !contact_email) {
+    return res.status(400).json({ error: 'shop_name, slug, contact_name, contact_email required' });
+  }
+
+  // Validate slug
+  if (!/^[a-z0-9-]+$/.test(slug)) {
+    return res.status(400).json({ error: 'slug must be lowercase letters, numbers, and hyphens only' });
+  }
+
+  // Check slug uniqueness
+  const existing = db.prepare('SELECT id FROM shop_accounts WHERE slug = ?').get(slug);
+  if (existing) return res.status(409).json({ error: 'Slug already taken' });
+
+  const shopId = uuidv4();
+  db.prepare(`
+    INSERT INTO shop_accounts (id, shop_name, slug, contact_name, contact_email,
+      ship_name, ship_street1, ship_city, ship_state, ship_zip, ship_phone)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+  `).run(shopId, shop_name, slug, contact_name, contact_email,
+    ship_name || null, ship_street1 || null, ship_city || null,
+    ship_state || null, ship_zip || null, ship_phone || null);
+
+  // Create seller_session with account_type = 'shop'
+  const sessionToken = uuidv4();
+  db.prepare(`
+    INSERT INTO seller_sessions (id, email, created_at, account_type, shop_slug)
+    VALUES (?, ?, datetime('now'), 'shop', ?)
+  `).run(sessionToken, contact_email, slug);
+
+  const loginLink = `${SITE_URL}/seller?token=${sessionToken}`;
+
+  // Send magic link email
+  try {
+    resend.emails.send({
+      from: 'GoodKit <no-reply@good-kit.com>',
+      to: contact_email,
+      subject: `Welcome to GoodKit — ${shop_name} seller portal`,
+      html: `
+        <h2>Welcome to GoodKit, ${contact_name}!</h2>
+        <p>Your shop <strong>${shop_name}</strong> has been set up on GoodKit.</p>
+        <p>Use this link to access your seller dashboard and track your sales:</p>
+        <p><a href="${loginLink}" style="font-size:1.1em;font-weight:bold">${loginLink}</a></p>
+        <p>Your public storefront: <a href="${SITE_URL}/shop/${slug}">${SITE_URL}/shop/${slug}</a></p>
+        <p>As a consignment shop, you'll receive <strong>65%</strong> of each sale price.</p>
+        <p>— The GoodKit Team</p>
+      `
+    });
+  } catch(e) {
+    console.error('[shop/create] email failed:', e.message);
+  }
+
+  res.json({
+    ok: true,
+    shop_id: shopId,
+    slug,
+    storefront: `${SITE_URL}/shop/${slug}`,
+    login_link: loginLink
+  });
+});
+
+// GET /admin/shops — list all shop accounts
+app.get('/admin/shops', (req, res) => {
+  const key = req.headers['x-admin-key'] || req.query.key;
+  if (key !== process.env.ADMIN_KEY) return res.status(401).json({ error: 'Unauthorized' });
+
+  const shops = db.prepare(`
+    SELECT sa.*, COUNT(l.id) as listing_count,
+           SUM(CASE WHEN s.status = 'completed' THEN s.item_price_cents ELSE 0 END) / 100.0 as total_sold
+    FROM shop_accounts sa
+    LEFT JOIN seller_sessions ss ON ss.shop_slug = sa.slug
+    LEFT JOIN listings l ON l.seller_id = ss.id
+    LEFT JOIN sales s ON s.listing_id = l.id
+    GROUP BY sa.id
+    ORDER BY sa.created_at DESC
+  `).all();
+
+  res.set('Access-Control-Allow-Origin', '*');
+  res.json({ shops });
+});
+
+// GET /shop/:slug/data — public JSON for shop storefront
+app.get('/shop/:slug/data', (req, res) => {
+  const { slug } = req.params;
+  const shop = db.prepare('SELECT * FROM shop_accounts WHERE slug = ?').get(slug);
+  if (!shop) return res.status(404).json({ error: 'Shop not found' });
+
+  const session = db.prepare('SELECT id FROM seller_sessions WHERE shop_slug = ? AND account_type = ?').get(slug, 'shop');
+  const listings = session
+    ? db.prepare(`
+        SELECT l.id, l.title, l.description, l.price_cents, l.condition, l.category,
+               l.size, l.brand, l.weight_oz, l.image_urls, l.created_at
+        FROM listings l
+        WHERE l.seller_id = ? AND l.status = 'active'
+        ORDER BY l.created_at DESC
+      `).all(session.id)
+    : [];
+
+  // Parse image_urls JSON
+  const formattedListings = listings.map(l => ({
+    ...l,
+    price: l.price_cents / 100,
+    images: (() => { try { return JSON.parse(l.image_urls || '[]'); } catch(e) { return []; } })()
+  }));
+
+  res.json({
+    shop: {
+      name: shop.shop_name,
+      slug: shop.slug,
+      contact_name: shop.contact_name,
+    },
+    listings: formattedListings,
+    count: formattedListings.length
+  });
+});
+
+// GET /shop/:slug — public shop storefront HTML
+app.get('/shop/:slug', (req, res) => {
+  const { slug } = req.params;
+  const shop = db.prepare('SELECT * FROM shop_accounts WHERE slug = ?').get(slug);
+  if (!shop) return res.status(404).send('<h1>Shop not found</h1>');
+
+  const html = `<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>${shop.shop_name} | GoodKit Gear</title>
+  <meta name="description" content="Shop quality used outdoor gear from ${shop.shop_name} on GoodKit.">
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+    :root {
+      --bg: #f9f7f4; --surface: #ffffff; --fg: #1a1a18; --muted: #6b6b68;
+      --accent: #FF5C1A; --border: #e8e5e0; --radius: 10px;
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+    }
+    body { background: var(--bg); color: var(--fg); min-height: 100vh; }
+    header { background: var(--surface); border-bottom: 1px solid var(--border); padding: 16px 24px; display: flex; align-items: center; gap: 16px; }
+    header a { text-decoration: none; color: var(--accent); font-weight: 700; font-size: 1.1rem; }
+    .shop-hero { background: var(--surface); border-bottom: 1px solid var(--border); padding: 32px 24px; }
+    .shop-hero h1 { font-size: 1.8rem; font-weight: 800; }
+    .shop-hero p { color: var(--muted); margin-top: 6px; }
+    .container { max-width: 1100px; margin: 0 auto; padding: 32px 24px; }
+    .grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(260px, 1fr)); gap: 20px; }
+    .card { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); overflow: hidden; transition: box-shadow 0.15s; }
+    .card:hover { box-shadow: 0 4px 20px rgba(0,0,0,0.08); }
+    .card a { text-decoration: none; color: inherit; display: block; }
+    .card-img { aspect-ratio: 4/3; background: var(--bg); overflow: hidden; }
+    .card-img img { width: 100%; height: 100%; object-fit: cover; }
+    .card-img .no-img { width: 100%; height: 100%; display: flex; align-items: center; justify-content: center; font-size: 2.5rem; }
+    .card-body { padding: 14px 16px 18px; }
+    .card-title { font-weight: 600; font-size: 0.95rem; margin-bottom: 4px; }
+    .card-meta { color: var(--muted); font-size: 0.82rem; margin-bottom: 8px; }
+    .card-price { font-size: 1.1rem; font-weight: 700; color: var(--accent); }
+    .badge { display: inline-block; padding: 2px 8px; border-radius: 4px; font-size: 0.75rem; font-weight: 600; background: var(--bg); color: var(--muted); border: 1px solid var(--border); margin-left: 6px; }
+    .empty { text-align: center; padding: 80px 24px; color: var(--muted); }
+    .empty h2 { font-size: 1.3rem; margin-bottom: 8px; }
+    footer { border-top: 1px solid var(--border); padding: 24px; text-align: center; color: var(--muted); font-size: 0.85rem; }
+    footer a { color: var(--accent); text-decoration: none; }
+    @media (max-width: 480px) { .grid { grid-template-columns: repeat(2, 1fr); gap: 12px; } .container { padding: 16px; } }
+  </style>
+</head>
+<body>
+  <header>
+    <a href="${SITE_URL}">GoodKit</a>
+    <span style="color:var(--muted);font-size:0.85rem">/ ${shop.shop_name}</span>
+  </header>
+  <div class="shop-hero">
+    <div style="max-width:1100px;margin:0 auto">
+      <h1>${shop.shop_name}</h1>
+      <p>Quality used outdoor gear · Verified GoodKit seller</p>
+    </div>
+  </div>
+  <div class="container">
+    <div id="listings" class="grid">
+      <div class="empty"><h2>Loading gear...</h2></div>
+    </div>
+  </div>
+  <footer>
+    Powered by <a href="${SITE_URL}">GoodKit</a> · Consignment gear from ${shop.shop_name}
+  </footer>
+  <script>
+    fetch('/shop/${slug}/data')
+      .then(r => r.json())
+      .then(data => {
+        const container = document.getElementById('listings');
+        if (!data.listings || data.listings.length === 0) {
+          container.innerHTML = '<div class="empty"><h2>No listings yet</h2><p>Check back soon for gear from ${shop.shop_name}.</p></div>';
+          return;
+        }
+        container.innerHTML = data.listings.map(l => {
+          const img = l.images && l.images[0]
+            ? \`<img src="\${l.images[0]}" alt="\${l.title}" loading="lazy">\`
+            : '<div class="no-img">🏕️</div>';
+          const cond = l.condition ? \`<span class="badge">\${l.condition}</span>\` : '';
+          return \`
+            <div class="card">
+              <a href="/listing/\${l.id}">
+                <div class="card-img">\${img}</div>
+                <div class="card-body">
+                  <div class="card-title">\${l.title}\${cond}</div>
+                  <div class="card-meta">\${[l.brand, l.category, l.size].filter(Boolean).join(' · ')}</div>
+                  <div class="card-price">$\${(l.price_cents / 100).toFixed(2)}</div>
+                </div>
+              </a>
+            </div>
+          \`;
+        }).join('');
+      })
+      .catch(() => {
+        document.getElementById('listings').innerHTML = '<div class="empty"><h2>Could not load listings</h2><p>Please try again later.</p></div>';
+      });
+  </script>
+</body>
+</html>`;
+
+  res.setHeader('Content-Type', 'text/html');
+  res.send(html);
+});
+
+// Admin CORS preflight for /admin/shops
+app.options('/admin/shops*', (req, res) => {
+  res.set('Access-Control-Allow-Origin', '*');
+  res.set('Access-Control-Allow-Methods', 'GET,POST,OPTIONS');
+  res.set('Access-Control-Allow-Headers', 'Content-Type,x-admin-key');
+  res.sendStatus(204);
 });
 
 // ── START ─────────────────────────────────────────────────────────────────────
