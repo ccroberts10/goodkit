@@ -50,7 +50,7 @@ body{font-family:var(--body);background:var(--bg);color:var(--ink);-webkit-font-
 .btn-danger{background:transparent;color:#c0392b;border:1.5px solid #c0392b;}
 .btn-sm{padding:6px 13px;font-size:13px;}
 .btn-xs{padding:4px 9px;font-size:12px;border-radius:5px;}
-nav{position:sticky;top:0;z-index:100;background:var(--ink);display:flex;align-items:center;justify-content:space-between;padding:0 28px;height:56px;border-bottom:1px solid rgba(255,255,255,0.06);}
+nav{position:sticky;top:0;z-index:100;background:var(--ink);display:flex;align-items:center;justify-content:space-between;padding:env(safe-area-inset-top,0px) 28px 0;height:calc(56px + env(safe-area-inset-top,0px));border-bottom:1px solid rgba(255,255,255,0.06);}
 .nav-logo{font-family:var(--brand);font-weight:700;font-size:21px;color:#fff;text-decoration:none;letter-spacing:-0.3px;}
 .nav-logo .dot{color:var(--orange);}
 .form-group{display:flex;flex-direction:column;gap:5px;}
