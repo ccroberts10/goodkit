@@ -519,7 +519,9 @@ IMPORTANT: Return raw JSON only — no markdown, no code fences, no explanation.
 
 // ── ROUTES ───────────────────────────────────────────────────────────────────
 
-app.get('/', (req, res) => res.sendFile(path.join(__dirname, 'goodkit-marketplace.html')));
+app.get('/', (req, res) => res.sendFile(path.join(__dirname, 'index.html')));
+app.get('/shop', (req, res) => res.sendFile(path.join(__dirname, 'goodkit-marketplace.html')));
+app.get('/marketplace', (req, res) => res.sendFile(path.join(__dirname, 'goodkit-marketplace.html')));
 app.get('/sell', (req, res) => res.sendFile(path.join(__dirname, 'goodkit-seller-portal.html')));
 app.get('/health', (req, res) => res.json({ status: 'GoodKit Marketplace running' }));
 
