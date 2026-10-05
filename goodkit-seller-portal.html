@@ -349,6 +349,23 @@ nav{position:sticky;top:0;z-index:100;background:var(--ink);display:flex;align-i
           <div style="font-size:11px;color:var(--ink-soft);margin-top:4px;">Ask your team captain for your code. 2% of the sale goes to your team's fund.</div>
         </div>
         <div class="form-group">
+          <label class="form-label">Delivery method</label>
+          <div style="display:flex;flex-direction:column;gap:8px;" id="deliveryOptions">
+            <label style="display:flex;align-items:flex-start;gap:10px;padding:12px 14px;border:1px solid var(--border);border-radius:8px;cursor:pointer;transition:border-color .15s;" id="dlv-ship-label">
+              <input type="radio" name="delivery_type" value="ship" id="dlv-ship" checked onchange="onDeliveryChange()" style="margin-top:2px;accent-color:var(--orange);">
+              <div><div style="font-weight:700;font-size:13px;">📦 Ship — prepaid label</div><div style="font-size:11px;color:var(--ink-soft);margin-top:2px;">We generate a label. Buyer pays shipping.</div></div>
+            </label>
+            <label style="display:flex;align-items:flex-start;gap:10px;padding:12px 14px;border:1px solid var(--border);border-radius:8px;cursor:pointer;transition:border-color .15s;" id="dlv-pickup-label">
+              <input type="radio" name="delivery_type" value="local_pickup" id="dlv-pickup" onchange="onDeliveryChange()" style="margin-top:2px;accent-color:var(--orange);">
+              <div><div style="font-weight:700;font-size:13px;">📍 Local pickup — Durango</div><div style="font-size:11px;color:var(--ink-soft);margin-top:2px;">Buyer meets you. No shipping cost.</div></div>
+            </label>
+            <label style="display:flex;align-items:flex-start;gap:10px;padding:12px 14px;border:1px solid var(--border);border-radius:8px;cursor:pointer;transition:border-color .15s;" id="dlv-detour-label">
+              <input type="radio" name="delivery_type" value="detour" id="dlv-detour" onchange="onDeliveryChange()" style="margin-top:2px;accent-color:var(--orange);">
+              <div><div style="font-weight:700;font-size:13px;">🚗 Detour regional delivery</div><div style="font-size:11px;color:var(--ink-soft);margin-top:2px;">A courier delivers to Telluride, Farmington, or Pagosa Springs. Buyer pays delivery fee.</div></div>
+            </label>
+          </div>
+        </div>
+        <div class="form-group" id="weightTiersGroup">
           <label class="form-label">Shipping weight tier</label>
           <div class="weight-tiers" id="weightTiers">
             <div class="tier-card selected" data-tier="xs" onclick="selectTier(this)">
@@ -931,6 +948,23 @@ function selectTier(el){
   updateFeeCalc();
 }
 
+function onDeliveryChange(){
+  const val = document.querySelector('input[name="delivery_type"]:checked')?.value || 'ship';
+  const wtGroup = document.getElementById('weightTiersGroup');
+  const labels = { ship: 'dlv-ship-label', local_pickup: 'dlv-pickup-label', detour: 'dlv-detour-label' };
+  // Highlight selected option border
+  ['dlv-ship-label','dlv-pickup-label','dlv-detour-label'].forEach(id=>{
+    const el=document.getElementById(id);
+    if(el) el.style.borderColor = '';
+  });
+  const sel = document.getElementById(labels[val]);
+  if(sel) sel.style.borderColor = 'var(--orange)';
+  // Show/hide weight tiers
+  if(wtGroup) wtGroup.style.display = val==='ship' ? '' : 'none';
+}
+// Init delivery UI on load
+document.addEventListener('DOMContentLoaded', onDeliveryChange);
+
 function updateFeeCalc(){
   const price=parseFloat(document.getElementById('newPrice').value)||0;
   if(!price){['fcPrice','fcFee','fcNet'].forEach(id=>document.getElementById(id).textContent='—');return;}
@@ -1002,8 +1036,11 @@ async function submitListing(e){
   fd.append('description',document.getElementById('newDesc').value);
   fd.append('keywords',document.getElementById('newKeywords').value);
   const ccxCode=document.getElementById('newCcxCode').value.trim(); if(ccxCode) fd.append('ccx_code',ccxCode);
+  const deliveryType = document.querySelector('input[name="delivery_type"]:checked')?.value || 'ship';
+  fd.append('delivery_type', deliveryType);
   fd.append('weight_tier',document.getElementById('newWeight').value);
-  fd.append('shipping_estimate',SHIP[document.getElementById('newWeight').value]||6);
+  // Only send shipping estimate for ship deliveries; server will set 0 for pickup/detour
+  fd.append('shipping_estimate', deliveryType==='ship' ? (SHIP[document.getElementById('newWeight').value]||6) : 0);
   fd.append('seller_email',SELLER.email||'');
   fd.append('seller_name',SELLER.name||SELLER.email||'');
   fd.append('stripe_account_id',SELLER.stripe_account_id||'');

@@ -710,7 +710,7 @@ app.get('/seller/portal', (req, res) => {
 
 app.post('/listings', upload.array('photos', 8), async (req, res) => {
   try {
-    const { seller_name, seller_email, stripe_account_id: client_stripe_id, title, category, size, description, condition, price, shipping_estimate, weight_oz, keywords, ccx_code } = req.body;
+    const { seller_name, seller_email, stripe_account_id: client_stripe_id, title, category, size, description, condition, price, shipping_estimate, weight_oz, keywords, ccx_code, delivery_type } = req.body;
     if (!seller_name || !seller_email || !title || !price) return res.status(400).json({ error: 'Missing required fields' });
     // Fall back to session-stored stripe_account_id if client didn't send one
     const sellerSession = db.prepare("SELECT * FROM seller_sessions WHERE email=? AND used=1 AND stripe_account_id IS NOT NULL AND stripe_account_id != '' ORDER BY created_at DESC LIMIT 1").get(seller_email);
@@ -730,8 +730,9 @@ app.post('/listings', upload.array('photos', 8), async (req, res) => {
     }
     const id       = uuidv4();
     const stripeId = (stripe_account_id && stripe_account_id.trim() !== '') ? stripe_account_id.trim() : null;
-    db.prepare(`INSERT INTO listings (id,seller_name,seller_email,stripe_account_id,title,category,size,description,condition,price,shipping_estimate,weight_oz,photos,status,keywords,ccx_code) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,'approved',?,?)`)
-      .run(id, seller_name.trim(), seller_email.trim(), stripeId, title.trim(), category || 'Other', size || '', description || '', condition || 'Good', priceInCents, shippingCents, weightOz, JSON.stringify(photos), keywords || '', validCcxCode);
+    const validDeliveryType = ['ship', 'local_pickup', 'detour'].includes(delivery_type) ? delivery_type : 'ship';
+    db.prepare(`INSERT INTO listings (id,seller_name,seller_email,stripe_account_id,title,category,size,description,condition,price,shipping_estimate,weight_oz,photos,status,keywords,ccx_code,delivery_type) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,'approved',?,?,?)`)
+      .run(id, seller_name.trim(), seller_email.trim(), stripeId, title.trim(), category || 'Other', size || '', description || '', condition || 'Good', priceInCents, shippingCents, weightOz, JSON.stringify(photos), keywords || '', validCcxCode, validDeliveryType);
     const newListing = db.prepare("SELECT * FROM listings WHERE id = ?").get(id);
     await fireListingAlerts(newListing);
     await sendEmail(NOTIFY_EMAIL, `[GoodKit] New listing: ${title}`, `Seller: ${seller_name} · ${seller_email}\nItem: ${title}\nPrice: $${priceInCents/100}\nWeight: ${weightOz}oz${validCcxCode ? `\nCCX: ${validCcxCode}` : ''}`);
@@ -751,7 +752,8 @@ app.get('/listings', (req, res) => {
         price:             l.price / 100,
         shipping_estimate: (l.shipping_estimate || 0) / 100,
         split:             calculateSplit(l.price, l.shipping_estimate || 0),
-        label:             getLabelTier(l.weight_oz)
+        label:             getLabelTier(l.weight_oz),
+        delivery_type:     l.delivery_type || 'ship'
       }));
     if (category) listings = listings.filter(l => l.category === category);
     if (maxPrice)  listings = listings.filter(l => l.price <= parseFloat(maxPrice));
@@ -822,7 +824,9 @@ app.post('/checkout', async (req, res) => {
     const listing = db.prepare("SELECT * FROM listings WHERE id=? AND status='approved'").get(listingId);
     if (!listing) return res.status(404).json({ error: 'Listing not found or no longer available' });
 
-    const shippingCents = (deliveryType === 'pickup') ? 0 : (listing.shipping_estimate || 0);
+    // Use listing's delivery_type as truth; buyer can't override to a different mode
+    const resolvedDeliveryType = listing.delivery_type || deliveryType || 'ship';
+    const shippingCents = (resolvedDeliveryType === 'local_pickup' || resolvedDeliveryType === 'pickup') ? 0 : (listing.shipping_estimate || 0);
     const split         = calculateSplit(listing.price, shippingCents, listing.ccx_code);
     const totalCharge   = listing.price + shippingCents;
     const labelInfo     = getLabelTier(listing.weight_oz);
@@ -836,7 +840,7 @@ app.post('/checkout', async (req, res) => {
         listingId:    listing.id,
         listingTitle: listing.title,
         sellerEmail:  listing.seller_email,
-        deliveryType: deliveryType || 'shipping',
+        deliveryType: resolvedDeliveryType,
         labelTier:    labelInfo.tier
       }
     };
@@ -861,7 +865,7 @@ app.post('/checkout', async (req, res) => {
         paymentIntent.id, listing.price,
         Math.round(split.sellerNet * 100),
         Math.round(split.platformFee * 100),
-        deliveryType || 'shipping',
+        resolvedDeliveryType,
         labelInfo.tier,
         listing.ccx_code || null,
         Math.round((split.ccxFund || 0) * 100)
@@ -882,7 +886,8 @@ app.post('/checkout', async (req, res) => {
         sellerPct:   split.sellerPct,
         platformPct: split.platformPct
       },
-      label: labelInfo
+      label:        labelInfo,
+      deliveryType: resolvedDeliveryType
     });
   } catch(err) { console.error('Checkout error:', err); res.status(500).json({ error: err.message }); }
 });
@@ -1078,10 +1083,56 @@ app.post('/webhook', async (req, res) => {
     const sale    = db.prepare("SELECT * FROM sales WHERE payment_intent_id=?").get(pi.id);
 
     if (listing && sale) {
-      const isPickup = sale.delivery_type === 'pickup';
+      const isPickup  = sale.delivery_type === 'local_pickup' || sale.delivery_type === 'pickup';
+      const isDetour  = sale.delivery_type === 'detour';
       let labelUrl = null, trackingNumber = null, trackingUrl = null;
+      let detourJobId = null;
 
-      if (!isPickup && SHIPPO_API_KEY) {
+      // ── Detour regional delivery — post job to Detour platform ───────────
+      if (isDetour && process.env.DETOUR_API_URL && process.env.GOODKIT_API_KEY) {
+        try {
+          const sellerAddr = db.prepare("SELECT ship_name, ship_street1, ship_city, ship_state, ship_zip, ship_phone FROM seller_sessions WHERE email=? AND used=1 AND ship_street1 IS NOT NULL ORDER BY created_at DESC LIMIT 1").get(listing.seller_email);
+          const WEIGHT_SIZE_MAP = { xs: 'small', sm: 'small', md: 'medium', lg: 'large' };
+          const itemSize = WEIGHT_SIZE_MAP[getLabelTier(listing.weight_oz).tier] || 'medium';
+          const detourPayload = {
+            job_type:        'standard',
+            title:           `GoodKit: ${listing.title}`,
+            description:     `GoodKit marketplace sale. Item: ${listing.title}. Condition: ${listing.condition}.`,
+            item_size:       itemSize,
+            item_weight:     listing.weight_oz ? Math.ceil(listing.weight_oz / 16) + ' lb' : null,
+            pickup_address:  sellerAddr?.ship_street1 || '',
+            pickup_city:     sellerAddr?.ship_city    || 'Durango',
+            pickup_state:    sellerAddr?.ship_state   || 'CO',
+            pickup_zip:      sellerAddr?.ship_zip     || '',
+            dropoff_address: sale.buyer_street1 || '',
+            dropoff_city:    sale.buyer_city    || '',
+            dropoff_state:   sale.buyer_state   || '',
+            dropoff_zip:     sale.buyer_zip     || '',
+            offered_price:   ((listing.shipping_estimate || 0) / 100).toFixed(2),
+            seller_name:     listing.seller_name,
+            seller_phone:    sellerAddr?.ship_phone || '',
+            buyer_name:      sale.buyer_name || sale.buyer_email,
+            notes:           `GoodKit order. Seller payout handled by GoodKit. Sale ID: ${sale.id}`
+          };
+          const dtRes = await fetch(`${process.env.DETOUR_API_URL}/api/jobs`, {
+            method:  'POST',
+            headers: { 'Content-Type': 'application/json', 'x-api-key': process.env.GOODKIT_API_KEY },
+            body:    JSON.stringify(detourPayload)
+          });
+          const dtData = await dtRes.json();
+          if (dtData.id) {
+            detourJobId = dtData.id;
+            db.prepare("UPDATE sales SET tracking_number=? WHERE id=?").run('DETOUR-' + detourJobId, sale.id);
+            console.log(`Detour job created: ${detourJobId} for sale ${sale.id}`);
+          } else {
+            console.error('Detour job creation failed:', dtData);
+          }
+        } catch(dtErr) {
+          console.error('Detour integration error:', dtErr.message);
+        }
+      }
+
+      if (!isPickup && !isDetour && SHIPPO_API_KEY) {
         try {
           // Look up seller's saved shipping address
           const sellerAddr = db.prepare("SELECT ship_name, ship_street1, ship_city, ship_state, ship_zip, ship_phone FROM seller_sessions WHERE email=? AND used=1 AND ship_street1 IS NOT NULL ORDER BY created_at DESC LIMIT 1").get(listing.seller_email);
@@ -1123,6 +1174,8 @@ app.post('/webhook', async (req, res) => {
       // Email seller
       const sellerLabelSection = isPickup
         ? `<p style="font-size:13px;color:#555;margin:8px 0 0;">📍 Buyer will pick up — coordinate directly with them.</p>`
+        : isDetour
+        ? `<p style="font-size:13px;color:#555;margin:8px 0 0;">🚗 <strong>Detour regional delivery</strong> — a courier will contact you to arrange pickup.${detourJobId ? ` Job ID: ${detourJobId}` : ''}</p>`
         : labelUrl
           ? `<p style="font-size:13px;color:#555;margin:8px 0 0;">📦 Your prepaid shipping label is ready:</p>
              <a href="${labelUrl}" style="display:inline-block;margin-top:8px;background:#1A1A14;color:#FF5C1A;padding:10px 20px;font-size:13px;font-weight:600;text-decoration:none;">Download Label →</a>

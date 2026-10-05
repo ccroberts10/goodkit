@@ -386,16 +386,29 @@ function closeModal(){document.getElementById('listingModal').classList.remove('
 
 function openCheckout(){
   const l=currentListing;
-  const total=(l.price+(l.shipping_estimate||0)).toFixed(2);
-  const needsShipping=l.shipping_estimate>0;
+  const dt=l.delivery_type||'ship';
+  const isPickup=dt==='local_pickup';
+  const isDetour=dt==='detour';
+  const needsAddress=!isPickup; // ship and detour both need an address
+  const shippingCents=isPickup?0:(l.shipping_estimate||0);
+  const total=(l.price+shippingCents).toFixed(2);
   document.getElementById('checkoutTitle').textContent=l.title;
+
+  let deliveryNote='';
+  if(isPickup){
+    deliveryNote=`<div style="background:rgba(255,149,0,0.08);border:1px solid rgba(255,149,0,0.25);border-radius:8px;padding:10px 12px;font-size:13px;color:var(--orange);margin-bottom:4px;">📍 <strong>Local pickup</strong> — coordinate with seller in Durango. No shipping cost.</div>`;
+  } else if(isDetour){
+    deliveryNote=`<div style="background:rgba(255,149,0,0.08);border:1px solid rgba(255,149,0,0.25);border-radius:8px;padding:10px 12px;font-size:13px;color:var(--orange);margin-bottom:4px;">🚗 <strong>Detour regional delivery</strong> — a courier will deliver within the Durango corridor (Telluride · Farmington · Pagosa Springs). Enter your address below.</div>`;
+  }
+
   document.getElementById('checkoutForm').innerHTML=`
     <div style="display:flex;flex-direction:column;gap:12px;">
+      ${deliveryNote}
       <div class="form-group"><label class="form-label">Your name</label><input class="form-input" type="text" id="buyerName" placeholder="Full name" autocomplete="name"></div>
       <div class="form-group"><label class="form-label">Email</label><input class="form-input" type="email" id="buyerEmail" placeholder="you@email.com" autocomplete="email"></div>
-      ${needsShipping?`
+      ${needsAddress?`
       <div style="border-top:1px solid var(--border);padding-top:12px;">
-        <div class="form-label" style="margin-bottom:8px;">Shipping address</div>
+        <div class="form-label" style="margin-bottom:8px;">${isDetour?'Delivery address':'Shipping address'}</div>
         <div style="display:flex;flex-direction:column;gap:8px;">
           <input class="form-input" id="buyerStreet1" placeholder="Street address" autocomplete="street-address">
           <div style="display:grid;grid-template-columns:1fr 56px 90px;gap:6px;">
@@ -412,11 +425,12 @@ function openCheckout(){
       </div>
       <div class="split-box">
         <div class="split-row"><span>Item</span><span>$${Number(l.price).toFixed(2)}</span></div>
-        ${needsShipping?`<div class="split-row"><span>Shipping</span><span>$${Number(l.shipping_estimate).toFixed(2)}</span></div>`:''}
+        ${!isPickup&&shippingCents>0?`<div class="split-row"><span>${isDetour?'Delivery':'Shipping'}</span><span>$${Number(shippingCents).toFixed(2)}</span></div>`:''}
+        ${isPickup?`<div class="split-row"><span>Pickup (no shipping)</span><span>$0.00</span></div>`:''}
         <div class="split-row total"><span>Total</span><span>$${total}</span></div>
       </div>
       <button class="btn btn-primary" style="width:100%;justify-content:center;padding:12px;font-size:15px;" onclick="submitCheckout()" id="payBtn" data-secret="">Pay $${total}</button>
-      <div class="modal-fine">Secured by Stripe · Prepaid label emailed to seller</div>
+      <div class="modal-fine">Secured by Stripe${isPickup?' · Buyer arranges pickup with seller':isDetour?' · Detour courier delivers regionally':' · Prepaid label emailed to seller'}</div>
     </div>`;
   document.getElementById('checkoutModal').classList.add('open');
   initStripe();
@@ -425,7 +439,8 @@ function openCheckout(){
 async function initStripe(){
   try{
     const email=document.getElementById('buyerEmail')?.value.trim()||'';
-    const body={listingId:currentListing.id,buyerEmail:email,deliveryType:'shipping'};
+    const dt=currentListing.delivery_type||'ship';
+    const body={listingId:currentListing.id,buyerEmail:email,deliveryType:dt};
     const res=await fetch(`${API}/checkout`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)});
     const data=await res.json();
     if(!data.publishableKey)return;
@@ -446,17 +461,19 @@ async function submitCheckout(){
   const city=document.getElementById('buyerCity')?.value.trim()||'';
   const state=document.getElementById('buyerState')?.value.trim().toUpperCase()||'';
   const zip=document.getElementById('buyerZip')?.value.trim()||'';
-  const needsShipping=currentListing.shipping_estimate>0;
+  const dt=currentListing.delivery_type||'ship';
+  const isPickup=dt==='local_pickup';
+  const needsAddress=!isPickup;
 
   if(!email)return showToast('Enter your email first','error');
-  if(needsShipping&&(!street1||!city||!state||!zip))return showToast('Enter your full shipping address','error');
+  if(needsAddress&&(!street1||!city||!state||!zip))return showToast(`Enter your full ${dt==='detour'?'delivery':'shipping'} address`,'error');
 
   const secret=document.getElementById('payBtn').dataset.secret;
   if(!secret||!cardElement)return showToast('Card not loaded yet','error');
 
   // Re-create payment intent with full buyer info now that we have it
   try{
-    const body={listingId:currentListing.id,buyerEmail:email,deliveryType:'shipping',
+    const body={listingId:currentListing.id,buyerEmail:email,deliveryType:dt,
       buyerName:name,buyerStreet1:street1,buyerCity:city,buyerState:state,buyerZip:zip};
     const res=await fetch(`${API}/checkout`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)});
     const data=await res.json();
@@ -470,10 +487,16 @@ async function submitCheckout(){
   const{error}=await stripe.confirmCardPayment(finalSecret,{payment_method:{card:cardElement,billing_details:{email,name}}});
   if(error){
     document.getElementById('cardErr').textContent=error.message;
-    btn.disabled=false;btn.textContent=`Pay $${(currentListing.price+(currentListing.shipping_estimate||0)).toFixed(2)}`;
+    const shippingCents=isPickup?0:(currentListing.shipping_estimate||0);
+    btn.disabled=false;btn.textContent=`Pay $${(currentListing.price+shippingCents).toFixed(2)}`;
   }else{
     closeCheckout();
-    showToast('🎉 Payment successful! Seller will ship your gear.','success');
+    const successMsg=isPickup
+      ? '🎉 Payment successful! Check your email to coordinate pickup.'
+      : dt==='detour'
+      ? '🎉 Payment successful! A Detour courier will contact you for delivery.'
+      : '🎉 Payment successful! Seller will ship your gear.';
+    showToast(successMsg,'success');
     loadListings();
   }
 }
