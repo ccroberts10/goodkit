@@ -344,6 +344,11 @@ nav{position:sticky;top:0;z-index:100;background:var(--ink);display:flex;align-i
           <div style="font-size:11px;color:var(--ink-soft);margin-top:4px;">Brand, size, specs, model year — comma separated</div>
         </div>
         <div class="form-group">
+          <label class="form-label">CCX team code <span style="font-weight:400;color:var(--ink-soft);font-size:12px;">optional — earn 2% for your college team</span></label>
+          <input class="form-input" type="text" id="newCcxCode" placeholder="e.g. CU-MTB" style="text-transform:uppercase;letter-spacing:0.06em;" maxlength="12" oninput="this.value=this.value.toUpperCase()">
+          <div style="font-size:11px;color:var(--ink-soft);margin-top:4px;">Ask your team captain for your code. 2% of the sale goes to your team's fund.</div>
+        </div>
+        <div class="form-group">
           <label class="form-label">Shipping weight tier</label>
           <div class="weight-tiers" id="weightTiers">
             <div class="tier-card selected" data-tier="xs" onclick="selectTier(this)">
@@ -996,6 +1001,7 @@ async function submitListing(e){
   fd.append('price',document.getElementById('newPrice').value);
   fd.append('description',document.getElementById('newDesc').value);
   fd.append('keywords',document.getElementById('newKeywords').value);
+  const ccxCode=document.getElementById('newCcxCode').value.trim(); if(ccxCode) fd.append('ccx_code',ccxCode);
   fd.append('weight_tier',document.getElementById('newWeight').value);
   fd.append('shipping_estimate',SHIP[document.getElementById('newWeight').value]||6);
   fd.append('seller_email',SELLER.email||'');
@@ -1029,6 +1035,7 @@ async function submitListing(e){
     btn.disabled=false;btn.textContent='Publish Listing';
     photoFiles=[];renderPreviews();e.target.reset();
     document.getElementById('newWeight').value='xs';
+    document.getElementById('newCcxCode').value='';
     document.querySelectorAll('.tier-card').forEach((c,i)=>c.classList.toggle('selected',i===0));
     updateFeeCalc();switchTab('listings');loadDashData();
   }catch(err){
