@@ -272,6 +272,37 @@ db.exec(`
   );
 `);
 
+// ── COMMUNITIES SCHEMA ───────────────────────────────────────────────────────
+db.exec(`
+  CREATE TABLE IF NOT EXISTS communities (
+    id TEXT PRIMARY KEY,
+    slug TEXT NOT NULL UNIQUE,
+    name TEXT NOT NULL,
+    tagline TEXT DEFAULT '',
+    logo_url TEXT DEFAULT '',
+    accent_color TEXT DEFAULT '#E85D26',
+    cause_pct INTEGER DEFAULT 0,
+    cause_label TEXT DEFAULT '',
+    admin_email TEXT NOT NULL,
+    status TEXT DEFAULT 'active',
+    created_at TEXT DEFAULT (datetime('now'))
+  );
+  CREATE TABLE IF NOT EXISTS community_members (
+    id TEXT PRIMARY KEY,
+    community_id TEXT NOT NULL,
+    email TEXT NOT NULL,
+    status TEXT DEFAULT 'approved',
+    joined_at TEXT DEFAULT (datetime('now')),
+    UNIQUE(community_id, email)
+  );
+`);
+
+// Community migrations for existing DBs
+[
+  `ALTER TABLE listings ADD COLUMN community_id TEXT DEFAULT NULL`,
+  `ALTER TABLE communities ADD COLUMN featured_listing_ids TEXT DEFAULT '[]'`,
+].forEach(sql => { try { db.exec(sql); } catch(e) {} });
+
 // One-time: clear old DBP stripe_account_id values so sellers re-onboard with new GoodKit Stripe account
 // Only clears IDs that start with 'acct_' (Stripe Connect express accounts from DBP)
 // Safe to run on every deploy — has no effect once cleared
@@ -749,7 +780,13 @@ app.post('/listings', upload.array('photos', 8), async (req, res) => {
 app.get('/listings', (req, res) => {
   try {
     const { category, maxPrice, condition } = req.query;
-    let listings = db.prepare("SELECT * FROM listings WHERE status='approved' ORDER BY created_at DESC").all()
+    let listings = db.prepare(`
+      SELECT l.*, c.name AS community_name, c.slug AS community_slug,
+             c.logo_url AS community_logo, c.accent_color AS community_accent
+      FROM listings l
+      LEFT JOIN communities c ON l.community_id = c.id AND c.status='active'
+      WHERE l.status='approved' ORDER BY l.created_at DESC
+    `).all()
       .map(l => ({
         ...l,
         photos:            JSON.parse(l.photos || '[]'),
@@ -2009,6 +2046,114 @@ app.options('/admin/shops*', (req, res) => {
   res.set('Access-Control-Allow-Headers', 'Content-Type,x-admin-key');
   res.sendStatus(204);
 });
+
+// ── COMMUNITY ROUTES ──────────────────────────────────────────────────────────
+
+// GET /api/communities — list all active communities
+app.get('/api/communities', (req, res) => {
+  const communities = db.prepare(`SELECT * FROM communities WHERE status='active' ORDER BY name`).all();
+  res.json(communities);
+});
+
+// GET /api/communities/:slug — single community + featured listings
+app.get('/api/communities/:slug', (req, res) => {
+  const community = db.prepare(`SELECT * FROM communities WHERE slug=? AND status='active'`).get(req.params.slug);
+  if (!community) return res.status(404).json({ error: 'Community not found' });
+  const listings = db.prepare(`
+    SELECT * FROM listings WHERE community_id=? AND status='approved'
+    ORDER BY CASE WHEN id IN (SELECT value FROM json_each(?)) THEN 0 ELSE 1 END, created_at DESC
+  `).all(community.id, community.featured_listing_ids || '[]');
+  res.json({ community, listings });
+});
+
+// GET /api/communities/:slug/listings — listings for a community (for marketplace filter)
+app.get('/api/communities/:slug/listings', (req, res) => {
+  const community = db.prepare(`SELECT id FROM communities WHERE slug=? AND status='active'`).get(req.params.slug);
+  if (!community) return res.status(404).json({ error: 'Not found' });
+  const listings = db.prepare(`SELECT * FROM listings WHERE community_id=? AND status='approved' ORDER BY created_at DESC`).all(community.id);
+  res.json(listings);
+});
+
+// POST /admin/communities/create — admin creates a community
+app.post('/admin/communities/create', (req, res) => {
+  const key = req.headers['x-admin-key'] || req.body.admin_key;
+  if (key !== process.env.ADMIN_KEY) return res.status(403).json({ error: 'Unauthorized' });
+  const { name, slug, tagline, logo_url, accent_color, cause_pct, cause_label, admin_email } = req.body;
+  if (!name || !slug || !admin_email) return res.status(400).json({ error: 'name, slug, admin_email required' });
+  const cleanSlug = slug.toLowerCase().replace(/[^a-z0-9-]/g, '-');
+  try {
+    const id = uuidv4();
+    db.prepare(`
+      INSERT INTO communities (id, slug, name, tagline, logo_url, accent_color, cause_pct, cause_label, admin_email)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+    `).run(id, cleanSlug, name, tagline||'', logo_url||'', accent_color||'#E85D26', cause_pct||0, cause_label||'', admin_email);
+    res.json({ ok: true, id, slug: cleanSlug });
+  } catch(e) {
+    if (e.message.includes('UNIQUE')) return res.status(409).json({ error: 'Slug already taken' });
+    throw e;
+  }
+});
+
+// PATCH /admin/communities/:id — update community (logo, colors, featured listings, etc.)
+app.patch('/admin/communities/:id', (req, res) => {
+  const key = req.headers['x-admin-key'] || req.body.admin_key;
+  if (key !== process.env.ADMIN_KEY) return res.status(403).json({ error: 'Unauthorized' });
+  const { name, tagline, logo_url, accent_color, cause_pct, cause_label, featured_listing_ids, status } = req.body;
+  const community = db.prepare(`SELECT * FROM communities WHERE id=?`).get(req.params.id);
+  if (!community) return res.status(404).json({ error: 'Not found' });
+  db.prepare(`
+    UPDATE communities SET
+      name=?, tagline=?, logo_url=?, accent_color=?, cause_pct=?, cause_label=?, featured_listing_ids=?, status=?
+    WHERE id=?
+  `).run(
+    name ?? community.name,
+    tagline ?? community.tagline,
+    logo_url ?? community.logo_url,
+    accent_color ?? community.accent_color,
+    cause_pct ?? community.cause_pct,
+    cause_label ?? community.cause_label,
+    featured_listing_ids ? JSON.stringify(featured_listing_ids) : community.featured_listing_ids,
+    status ?? community.status,
+    req.params.id
+  );
+  res.json({ ok: true });
+});
+
+// PATCH /admin/communities/:id/members — approve/add a member email
+app.post('/admin/communities/:id/members', (req, res) => {
+  const key = req.headers['x-admin-key'] || req.body.admin_key;
+  if (key !== process.env.ADMIN_KEY) return res.status(403).json({ error: 'Unauthorized' });
+  const { email, status } = req.body;
+  if (!email) return res.status(400).json({ error: 'email required' });
+  try {
+    db.prepare(`
+      INSERT INTO community_members (id, community_id, email, status) VALUES (?, ?, ?, ?)
+      ON CONFLICT(community_id, email) DO UPDATE SET status=excluded.status
+    `).run(uuidv4(), req.params.id, email, status || 'approved');
+    res.json({ ok: true });
+  } catch(e) { throw e; }
+});
+
+// GET /admin/communities — list all communities for admin
+app.get('/admin/communities', (req, res) => {
+  const key = req.headers['x-admin-key'];
+  if (key !== process.env.ADMIN_KEY) return res.status(403).json({ error: 'Unauthorized' });
+  const communities = db.prepare(`SELECT * FROM communities ORDER BY created_at DESC`).all();
+  res.json(communities);
+});
+
+// PATCH /listings/:id/community — seller affiliates listing with a community
+app.patch('/listings/:id/community', (req, res) => {
+  const { community_id, seller_email } = req.body;
+  const listing = db.prepare(`SELECT * FROM listings WHERE id=?`).get(req.params.id);
+  if (!listing) return res.status(404).json({ error: 'Listing not found' });
+  if (listing.seller_email !== seller_email) return res.status(403).json({ error: 'Not your listing' });
+  db.prepare(`UPDATE listings SET community_id=? WHERE id=?`).run(community_id || null, req.params.id);
+  res.json({ ok: true });
+});
+
+// GET /community/:slug — serve branded community page
+app.get('/community/:slug', (req, res) => res.sendFile(path.join(__dirname, 'goodkit-community.html')));
 
 // ── START ─────────────────────────────────────────────────────────────────────
 

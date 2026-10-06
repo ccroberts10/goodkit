@@ -112,6 +112,8 @@ nav{position:sticky;top:0;z-index:100;background:var(--ink);display:flex;align-i
 .card-footer{display:flex;align-items:center;justify-content:space-between;}
 .card-price{font-family:var(--mono);font-size:17px;font-weight:500;color:var(--orange);}
 .card-ship{font-size:11px;color:var(--muted);}
+.community-badge{display:inline-flex;align-items:center;gap:4px;margin-top:7px;padding:3px 7px;border-radius:20px;font-size:10px;font-weight:600;letter-spacing:0.04em;border:1px solid var(--border);background:var(--bg-subtle);color:var(--muted);max-width:100%;overflow:hidden;white-space:nowrap;text-overflow:ellipsis;}
+.community-badge img{width:14px;height:14px;border-radius:3px;object-fit:contain;flex-shrink:0;}
 
 /* LISTING MODAL */
 .modal-detail{max-width:800px;}
@@ -304,7 +306,13 @@ function renderGrid(listings){
     </div>`;
     return;
   }
-  grid.innerHTML=listings.map(l=>`
+  grid.innerHTML=listings.map(l=>{
+    const communityBadge=l.community_name?`
+      <a class="community-badge" href="/community/${l.community_slug}" onclick="event.stopPropagation()">
+        ${l.community_logo?`<img src="${l.community_logo}" alt="">`:''}
+        ${l.community_name}
+      </a>`:''
+    return `
     <div class="card" onclick="openListing('${l.id}')">
       <div class="card-photo">
         ${l.photos?.length?`<img src="${API}${l.photos[0]}" alt="${l.title}" loading="lazy">`:`<div class="card-photo-ph">🚴</div>`}
@@ -317,8 +325,10 @@ function renderGrid(listings){
           <div class="card-price">$${Number(l.price).toFixed(0)}</div>
           <div class="card-ship">${l.shipping_estimate>0?`+$${Number(l.shipping_estimate).toFixed(0)} ship`:'free ship'}</div>
         </div>
+        ${communityBadge}
       </div>
-    </div>`).join('');
+    </div>`;
+  }).join('');
 }
 
 async function openListing(id){
