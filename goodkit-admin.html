@@ -128,6 +128,7 @@
     <div class="nav-item" onclick="nav('ccx')" id="nav-ccx"><span class="nav-icon">🎓</span> CCX Teams</div>
     <div class="nav-item" onclick="nav('sales')" id="nav-sales"><span class="nav-icon">💳</span> Sales</div>
     <div class="nav-item" onclick="nav('listings')" id="nav-listings"><span class="nav-icon">📦</span> Listings</div>
+    <div class="nav-item" onclick="nav('communities')" id="nav-communities"><span class="nav-icon">🏔</span> Communities</div>
     <div style="flex:1;"></div>
     <div class="nav-item" onclick="refresh()" style="color:var(--fg3);font-size:12px;"><span class="nav-icon">↻</span> Refresh</div>
     <div class="nav-item" onclick="logout()" style="color:var(--fg3);font-size:12px;"><span class="nav-icon">→</span> Sign out</div>
@@ -173,6 +174,41 @@
       <div class="table-wrap">
         <div class="table-head">Active & recent listings</div>
         <div id="listingsTable"></div>
+      </div>
+    </div>
+
+    <!-- COMMUNITIES -->
+    <div class="section" id="section-communities">
+      <div class="section-title">Communities</div>
+
+      <!-- Create community form -->
+      <div class="table-wrap" style="padding:16px 20px 20px;">
+        <div class="table-head" style="padding:0 0 12px;border-bottom:none;font-size:13px;font-weight:700;">Create new community</div>
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;" id="commCreateGrid">
+          <div><label style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:0.07em;color:var(--fg2);display:block;margin-bottom:4px;">Name *</label>
+            <input id="cc-name" placeholder="FLC Cycling" style="width:100%;padding:8px 10px;background:var(--bg3);border:1px solid var(--border);border-radius:6px;color:var(--fg);font-size:13px;outline:none;"></div>
+          <div><label style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:0.07em;color:var(--fg2);display:block;margin-bottom:4px;">Slug *</label>
+            <input id="cc-slug" placeholder="flc-cycling" style="width:100%;padding:8px 10px;background:var(--bg3);border:1px solid var(--border);border-radius:6px;color:var(--fg);font-size:13px;outline:none;font-family:monospace;" oninput="this.value=this.value.toLowerCase().replace(/[^a-z0-9-]/g,'')"></div>
+          <div><label style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:0.07em;color:var(--fg2);display:block;margin-bottom:4px;">Admin email *</label>
+            <input id="cc-email" type="email" placeholder="admin@org.com" style="width:100%;padding:8px 10px;background:var(--bg3);border:1px solid var(--border);border-radius:6px;color:var(--fg);font-size:13px;outline:none;"></div>
+          <div><label style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:0.07em;color:var(--fg2);display:block;margin-bottom:4px;">Tagline</label>
+            <input id="cc-tagline" placeholder="Durango's premier road club" style="width:100%;padding:8px 10px;background:var(--bg3);border:1px solid var(--border);border-radius:6px;color:var(--fg);font-size:13px;outline:none;"></div>
+          <div><label style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:0.07em;color:var(--fg2);display:block;margin-bottom:4px;">Accent color</label>
+            <input id="cc-accent" type="color" value="#E85D26" style="width:100%;padding:4px 6px;background:var(--bg3);border:1px solid var(--border);border-radius:6px;height:36px;cursor:pointer;"></div>
+          <div><label style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:0.07em;color:var(--fg2);display:block;margin-bottom:4px;">Logo URL</label>
+            <input id="cc-logo" placeholder="https://…/logo.png" style="width:100%;padding:8px 10px;background:var(--bg3);border:1px solid var(--border);border-radius:6px;color:var(--fg);font-size:13px;outline:none;"></div>
+          <div><label style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:0.07em;color:var(--fg2);display:block;margin-bottom:4px;">Cause % (0 = none)</label>
+            <input id="cc-cause-pct" type="number" min="0" max="10" value="0" placeholder="2" style="width:100%;padding:8px 10px;background:var(--bg3);border:1px solid var(--border);border-radius:6px;color:var(--fg);font-size:13px;outline:none;"></div>
+          <div><label style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:0.07em;color:var(--fg2);display:block;margin-bottom:4px;">Cause label</label>
+            <input id="cc-cause-label" placeholder="trail maintenance" style="width:100%;padding:8px 10px;background:var(--bg3);border:1px solid var(--border);border-radius:6px;color:var(--fg);font-size:13px;outline:none;"></div>
+        </div>
+        <button onclick="createCommunity()" style="margin-top:14px;padding:9px 20px;background:var(--accent);color:#fff;border:none;border-radius:7px;font-size:13px;font-weight:700;cursor:pointer;letter-spacing:0.02em;">Create Community →</button>
+      </div>
+
+      <!-- Communities list -->
+      <div class="table-wrap">
+        <div class="table-head">All communities <span id="commCount" style="font-weight:400;color:var(--fg3);"></span></div>
+        <div id="commList" style="padding:0 0 4px;"></div>
       </div>
     </div>
   </div>
@@ -243,6 +279,7 @@ function nav(id) {
   document.querySelectorAll('.nav-item').forEach(n => n.classList.remove('active'));
   $('section-' + id).classList.add('active');
   $('nav-' + id).classList.add('active');
+  if (id === 'communities') loadCommunities();
 }
 
 function render() {
@@ -251,6 +288,110 @@ function render() {
   renderCcx();
   renderSales();
   renderListings();
+}
+
+// ── Community management ────────────────────────────────────────────────
+const API_BASE = 'https://dbpmarketplace-production.up.railway.app';
+
+async function loadCommunities() {
+  try {
+    const r = await fetch(`${API_BASE}/admin/communities`, { headers: { 'x-admin-key': ADMIN_KEY } });
+    const communities = await r.json();
+    $('commCount').textContent = `— ${communities.length}`;
+    renderCommunities(communities);
+  } catch(e) { toast('Could not load communities', true); }
+}
+
+function renderCommunities(communities) {
+  const el = $('commList');
+  if (!communities.length) {
+    el.innerHTML = `<div style="padding:20px;color:var(--fg3);font-size:13px;">No communities yet.</div>`;
+    return;
+  }
+  el.innerHTML = communities.map(c => `
+    <div style="padding:14px 16px;border-bottom:1px solid var(--border);display:flex;align-items:center;gap:14px;flex-wrap:wrap;">
+      <div style="width:36px;height:36px;border-radius:8px;background:${c.accent_color||'#E85D26'}22;border:2px solid ${c.accent_color||'#E85D26'};display:flex;align-items:center;justify-content:center;font-size:11px;font-weight:700;color:${c.accent_color||'#E85D26'};flex-shrink:0;overflow:hidden;">
+        ${c.logo_url ? `<img src="${c.logo_url}" style="width:100%;height:100%;object-fit:contain;">` : c.name.split(' ').map(w=>w[0]).slice(0,2).join('')}
+      </div>
+      <div style="flex:1;min-width:0;">
+        <div style="font-weight:700;font-size:13px;">${c.name} <span style="font-family:monospace;font-size:11px;color:var(--fg3);">/${c.slug}</span></div>
+        <div style="font-size:11px;color:var(--fg3);margin-top:2px;">${c.tagline||''}${c.cause_pct>0?` · ♻ ${c.cause_pct}% → ${c.cause_label||c.name}`:''}</div>
+        <div style="font-size:11px;color:var(--fg3);">admin: ${c.admin_email}</div>
+      </div>
+      <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;">
+        <span class="badge badge-${c.status==='active'?'green':'gray'}">${c.status}</span>
+        <button onclick="toggleCommStatus('${c.id}','${c.status==='active'?'inactive':'active'}')" style="padding:5px 10px;font-size:11px;font-weight:600;border:1px solid var(--border);border-radius:5px;background:var(--bg3);color:var(--fg);cursor:pointer;">
+          ${c.status==='active'?'Pause':'Activate'}
+        </button>
+        <a href="/community/${c.slug}" target="_blank" style="padding:5px 10px;font-size:11px;font-weight:600;border:1px solid var(--border);border-radius:5px;background:var(--bg3);color:var(--fg);cursor:pointer;text-decoration:none;">View page ↗</a>
+      </div>
+      <div style="width:100%;margin-top:6px;">
+        <div style="font-size:11px;font-weight:600;color:var(--fg3);text-transform:uppercase;letter-spacing:0.07em;margin-bottom:4px;">Add member</div>
+        <div style="display:flex;gap:6px;">
+          <input id="mem-${c.id}" placeholder="email@example.com" style="flex:1;padding:6px 9px;background:var(--bg3);border:1px solid var(--border);border-radius:5px;color:var(--fg);font-size:12px;outline:none;">
+          <button onclick="addMember('${c.id}')" style="padding:6px 12px;font-size:12px;font-weight:700;background:var(--accent);color:#fff;border:none;border-radius:5px;cursor:pointer;">Add</button>
+        </div>
+      </div>
+    </div>`).join('');
+}
+
+async function createCommunity() {
+  const name = $('cc-name').value.trim();
+  const slug = $('cc-slug').value.trim();
+  const email = $('cc-email').value.trim();
+  if (!name || !slug || !email) { toast('Name, slug and email required', true); return; }
+  try {
+    const r = await fetch(`${API_BASE}/admin/communities/create`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'x-admin-key': ADMIN_KEY },
+      body: JSON.stringify({
+        name, slug,
+        admin_email: email,
+        tagline: $('cc-tagline').value.trim(),
+        accent_color: $('cc-accent').value,
+        logo_url: $('cc-logo').value.trim(),
+        cause_pct: parseInt($('cc-cause-pct').value) || 0,
+        cause_label: $('cc-cause-label').value.trim()
+      })
+    });
+    const d = await r.json();
+    if (!r.ok) throw new Error(d.error || 'Error');
+    toast('Community created!');
+    // Clear form
+    ['cc-name','cc-slug','cc-email','cc-tagline','cc-logo','cc-cause-label'].forEach(id => $(id).value='');
+    $('cc-cause-pct').value = '0';
+    $('cc-accent').value = '#E85D26';
+    loadCommunities();
+  } catch(e) { toast(e.message, true); }
+}
+
+async function toggleCommStatus(id, newStatus) {
+  try {
+    const r = await fetch(`${API_BASE}/admin/communities/${id}`, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json', 'x-admin-key': ADMIN_KEY },
+      body: JSON.stringify({ status: newStatus })
+    });
+    if (!r.ok) throw new Error('Error');
+    toast(`Community ${newStatus}`);
+    loadCommunities();
+  } catch(e) { toast(e.message, true); }
+}
+
+async function addMember(communityId) {
+  const emailEl = $(`mem-${communityId}`);
+  const email = emailEl.value.trim();
+  if (!email) return;
+  try {
+    const r = await fetch(`${API_BASE}/admin/communities/${communityId}/members`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'x-admin-key': ADMIN_KEY },
+      body: JSON.stringify({ email, status: 'approved' })
+    });
+    if (!r.ok) throw new Error('Error');
+    toast(`${email} added`);
+    emailEl.value = '';
+  } catch(e) { toast(e.message, true); }
 }
 
 function renderOverview() {

@@ -766,8 +766,14 @@ app.post('/listings', upload.array('photos', 8), async (req, res) => {
     const id       = uuidv4();
     const stripeId = (stripe_account_id && stripe_account_id.trim() !== '') ? stripe_account_id.trim() : null;
     const validDeliveryType = ['ship', 'local_pickup', 'detour'].includes(delivery_type) ? delivery_type : 'ship';
-    db.prepare(`INSERT INTO listings (id,seller_name,seller_email,stripe_account_id,title,category,size,description,condition,price,shipping_estimate,weight_oz,photos,status,keywords,ccx_code,delivery_type) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,'approved',?,?,?)`)
-      .run(id, seller_name.trim(), seller_email.trim(), stripeId, title.trim(), category || 'Other', size || '', description || '', condition || 'Good', priceInCents, shippingCents, weightOz, JSON.stringify(photos), keywords || '', validCcxCode, validDeliveryType);
+    // Validate community_id if provided — must exist and be active
+    let validCommunityId = null;
+    if (req.body.community_id) {
+      const comm = db.prepare("SELECT id FROM communities WHERE id=? AND status='active'").get(req.body.community_id);
+      validCommunityId = comm ? comm.id : null;
+    }
+    db.prepare(`INSERT INTO listings (id,seller_name,seller_email,stripe_account_id,title,category,size,description,condition,price,shipping_estimate,weight_oz,photos,status,keywords,ccx_code,delivery_type,community_id) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,'approved',?,?,?,?)`)
+      .run(id, seller_name.trim(), seller_email.trim(), stripeId, title.trim(), category || 'Other', size || '', description || '', condition || 'Good', priceInCents, shippingCents, weightOz, JSON.stringify(photos), keywords || '', validCcxCode, validDeliveryType, validCommunityId);
     const newListing = db.prepare("SELECT * FROM listings WHERE id = ?").get(id);
     await fireListingAlerts(newListing);
     await sendEmail(NOTIFY_EMAIL, `[GoodKit] New listing: ${title}`, `Seller: ${seller_name} · ${seller_email}\nItem: ${title}\nPrice: $${priceInCents/100}\nWeight: ${weightOz}oz${validCcxCode ? `\nCCX: ${validCcxCode}` : ''}`);

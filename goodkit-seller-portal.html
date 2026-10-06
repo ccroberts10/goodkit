@@ -348,6 +348,13 @@ nav{position:sticky;top:0;z-index:100;background:var(--ink);display:flex;align-i
           <input class="form-input" type="text" id="newCcxCode" placeholder="e.g. CU-MTB" style="text-transform:uppercase;letter-spacing:0.06em;" maxlength="12" oninput="this.value=this.value.toUpperCase()">
           <div style="font-size:11px;color:var(--ink-soft);margin-top:4px;">Ask your team captain for your code. 2% of the sale goes to your team's fund.</div>
         </div>
+        <div class="form-group" id="communityGroup" style="display:none;">
+          <label class="form-label">Community affiliation <span style="font-weight:400;color:var(--ink-soft);font-size:12px;">optional</span></label>
+          <select class="form-select" id="newCommunity">
+            <option value="">None — list without a community</option>
+          </select>
+          <div style="font-size:11px;color:var(--ink-soft);margin-top:4px;">Your listing will appear on the community page and in the main catalogue.</div>
+        </div>
         <div class="form-group">
           <label class="form-label">Delivery method</label>
           <div style="display:flex;flex-direction:column;gap:8px;" id="deliveryOptions">
@@ -484,7 +491,25 @@ async function loadDash(tok){
     renderMessages(d.threads||[], d.listings||[]);
     renderSales(d.sales||[]);
     if(d.stats) renderStatTiles(d.stats);
+    loadCommunities();
   }catch(e){showLogin();}
+}
+
+async function loadCommunities(){
+  try{
+    const r=await fetch(API+'/api/communities');
+    const communities=await r.json();
+    const sel=document.getElementById('newCommunity');
+    if(communities&&communities.length){
+      communities.forEach(c=>{
+        const opt=document.createElement('option');
+        opt.value=c.id;
+        opt.textContent=c.cause_pct>0?`${c.name} (${c.cause_pct}% → ${c.cause_label||c.name})`:c.name;
+        sel.appendChild(opt);
+      });
+      document.getElementById('communityGroup').style.display='';
+    }
+  }catch(e){ /* communities optional */ }
 }
 
 function logout(){clearS();SESSION=null;SELLER=null;showLogin();}
@@ -1044,6 +1069,7 @@ async function submitListing(e){
   fd.append('seller_email',SELLER.email||'');
   fd.append('seller_name',SELLER.name||SELLER.email||'');
   fd.append('stripe_account_id',SELLER.stripe_account_id||'');
+  const communityId=document.getElementById('newCommunity').value; if(communityId) fd.append('community_id',communityId);
   // Compress all photos before upload (iPhone photos are 4-8MB and crash the server)
   const compressPhoto = (file) => new Promise((resolve) => {
     const img = new Image();
