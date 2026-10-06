@@ -1161,7 +1161,8 @@ app.post('/webhook', async (req, res) => {
             buyer_name:      sale.buyer_name || sale.buyer_email,
             notes:           `GoodKit order. Seller payout handled by GoodKit. Sale ID: ${sale.id}`
           };
-          const dtRes = await fetch(`${process.env.DETOUR_API_URL}/api/jobs`, {
+          const detourBase = process.env.DETOUR_API_URL.startsWith('http') ? process.env.DETOUR_API_URL : `https://${process.env.DETOUR_API_URL}`;
+          const dtRes = await fetch(`${detourBase}/api/jobs`, {
             method:  'POST',
             headers: { 'Content-Type': 'application/json', 'x-api-key': process.env.GOODKIT_API_KEY },
             body:    JSON.stringify(detourPayload)
@@ -1851,9 +1852,9 @@ app.post('/admin/shops/create', (req, res) => {
   // Create seller_session with account_type = 'shop'
   const sessionToken = uuidv4();
   db.prepare(`
-    INSERT INTO seller_sessions (id, email, created_at, account_type, shop_slug)
-    VALUES (?, ?, datetime('now'), 'shop', ?)
-  `).run(sessionToken, contact_email, slug);
+    INSERT INTO seller_sessions (id, token, email, created_at, used, account_type, shop_slug)
+    VALUES (?, ?, ?, datetime('now'), 1, 'shop', ?)
+  `).run(uuidv4(), sessionToken, contact_email, slug);
 
   const loginLink = `${SITE_URL}/seller?token=${sessionToken}`;
 
@@ -1893,10 +1894,10 @@ app.get('/admin/shops', (req, res) => {
 
   const shops = db.prepare(`
     SELECT sa.*, COUNT(l.id) as listing_count,
-           SUM(CASE WHEN s.status = 'completed' THEN s.item_price_cents ELSE 0 END) / 100.0 as total_sold
+           COALESCE(SUM(CASE WHEN s.status IN ('paid_out','delivered') THEN s.amount ELSE 0 END) / 100.0, 0) as total_sold
     FROM shop_accounts sa
-    LEFT JOIN seller_sessions ss ON ss.shop_slug = sa.slug
-    LEFT JOIN listings l ON l.seller_id = ss.id
+    LEFT JOIN seller_sessions ss ON ss.shop_slug = sa.slug AND ss.account_type = 'shop'
+    LEFT JOIN listings l ON l.seller_email = ss.email
     LEFT JOIN sales s ON s.listing_id = l.id
     GROUP BY sa.id
     ORDER BY sa.created_at DESC
@@ -1912,22 +1913,22 @@ app.get('/shop/:slug/data', (req, res) => {
   const shop = db.prepare('SELECT * FROM shop_accounts WHERE slug = ?').get(slug);
   if (!shop) return res.status(404).json({ error: 'Shop not found' });
 
-  const session = db.prepare('SELECT id FROM seller_sessions WHERE shop_slug = ? AND account_type = ?').get(slug, 'shop');
+  const session = db.prepare('SELECT email FROM seller_sessions WHERE shop_slug = ? AND account_type = ?').get(slug, 'shop');
   const listings = session
     ? db.prepare(`
-        SELECT l.id, l.title, l.description, l.price_cents, l.condition, l.category,
-               l.size, l.brand, l.weight_oz, l.image_urls, l.created_at
+        SELECT l.id, l.title, l.description, l.price, l.condition, l.category,
+               l.size, l.weight_oz, l.photos, l.created_at
         FROM listings l
-        WHERE l.seller_id = ? AND l.status = 'active'
+        WHERE l.seller_email = ? AND l.status = 'approved'
         ORDER BY l.created_at DESC
-      `).all(session.id)
+      `).all(session.email)
     : [];
 
-  // Parse image_urls JSON
+  // Parse photos JSON
   const formattedListings = listings.map(l => ({
     ...l,
-    price: l.price_cents / 100,
-    images: (() => { try { return JSON.parse(l.image_urls || '[]'); } catch(e) { return []; } })()
+    price: l.price / 100,
+    images: (() => { try { return JSON.parse(l.photos || '[]'); } catch(e) { return []; } })()
   }));
 
   res.json({
@@ -2065,10 +2066,20 @@ app.get('/api/communities', (req, res) => {
 app.get('/api/communities/:slug', (req, res) => {
   const community = db.prepare(`SELECT * FROM communities WHERE slug=? AND status='active'`).get(req.params.slug);
   if (!community) return res.status(404).json({ error: 'Community not found' });
-  const listings = db.prepare(`
-    SELECT * FROM listings WHERE community_id=? AND status='approved'
-    ORDER BY CASE WHEN id IN (SELECT value FROM json_each(?)) THEN 0 ELSE 1 END, created_at DESC
+  const rawListings = db.prepare(`
+    SELECT l.*, ss.account_type FROM listings l
+    LEFT JOIN seller_sessions ss ON ss.email=l.seller_email AND ss.used=1 AND ss.account_type IS NOT NULL
+    WHERE l.community_id=? AND l.status='approved'
+    ORDER BY CASE WHEN l.id IN (SELECT value FROM json_each(?)) THEN 0 ELSE 1 END, l.created_at DESC
   `).all(community.id, community.featured_listing_ids || '[]');
+  const listings = rawListings.map(l => ({
+    ...l,
+    photos:            JSON.parse(l.photos || '[]'),
+    price:             l.price / 100,
+    shipping_estimate: (l.shipping_estimate || 0) / 100,
+    split:             calculateSplit(l.price, l.shipping_estimate || 0, null, l.account_type || 'individual'),
+    label:             getLabelTier(l.weight_oz)
+  }));
   res.json({ community, listings });
 });
 
@@ -2076,7 +2087,19 @@ app.get('/api/communities/:slug', (req, res) => {
 app.get('/api/communities/:slug/listings', (req, res) => {
   const community = db.prepare(`SELECT id FROM communities WHERE slug=? AND status='active'`).get(req.params.slug);
   if (!community) return res.status(404).json({ error: 'Not found' });
-  const listings = db.prepare(`SELECT * FROM listings WHERE community_id=? AND status='approved' ORDER BY created_at DESC`).all(community.id);
+  const rawListings = db.prepare(`
+    SELECT l.*, ss.account_type FROM listings l
+    LEFT JOIN seller_sessions ss ON ss.email=l.seller_email AND ss.used=1 AND ss.account_type IS NOT NULL
+    WHERE l.community_id=? AND l.status='approved' ORDER BY l.created_at DESC
+  `).all(community.id);
+  const listings = rawListings.map(l => ({
+    ...l,
+    photos:            JSON.parse(l.photos || '[]'),
+    price:             l.price / 100,
+    shipping_estimate: (l.shipping_estimate || 0) / 100,
+    split:             calculateSplit(l.price, l.shipping_estimate || 0, null, l.account_type || 'individual'),
+    label:             getLabelTier(l.weight_oz)
+  }));
   res.json(listings);
 });
 
