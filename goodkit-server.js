@@ -1,6 +1,7 @@
 require('dotenv').config();
 const express = require('express');
 const cors = require('cors');
+const rateLimit = require('express-rate-limit');
 const stripe = require('stripe')(process.env.STRIPE_SECRET_KEY);
 const Database = require('better-sqlite3');
 const multer = require('multer');
@@ -375,6 +376,38 @@ app.use(cors({
 }));
 app.use('/webhook', express.raw({ type: 'application/json' }));
 app.use(express.json());
+
+// ── Rate limiting ─────────────────────────────────────────────────────────────
+const apiLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000, // 15 minutes
+  max: 100,
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: { error: 'Too many requests, please try again later.' }
+});
+
+const checkoutLimiter = rateLimit({
+  windowMs: 60 * 60 * 1000, // 1 hour
+  max: 20,
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: { error: 'Too many checkout attempts, please try again later.' }
+});
+
+const uploadLimiter = rateLimit({
+  windowMs: 60 * 60 * 1000, // 1 hour
+  max: 50,
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: { error: 'Upload limit reached, please try again later.' }
+});
+
+app.use('/api/', apiLimiter);
+app.use('/api/checkout', checkoutLimiter);
+app.use('/api/listings', (req, res, next) => {
+  if (req.method === 'POST') return uploadLimiter(req, res, next);
+  next();
+});
 
 const uploadDir = process.env.UPLOAD_DIR || './uploads';
 if (!fs.existsSync(uploadDir)) fs.mkdirSync(uploadDir, { recursive: true });
@@ -2185,6 +2218,16 @@ app.patch('/listings/:id/community', (req, res) => {
 app.get('/community/:slug', (req, res) => res.sendFile(path.join(__dirname, 'goodkit-community.html')));
 
 // ── START ─────────────────────────────────────────────────────────────────────
+
+// ── Global error handler ──────────────────────────────────────────────────────
+app.use((err, req, res, next) => {
+  console.error(`[ERROR] ${req.method} ${req.path}:`, err.message || err);
+  if (res.headersSent) return next(err);
+  const status = err.status || err.statusCode || 500;
+  res.status(status).json({
+    error: status === 500 ? 'Internal server error' : (err.message || 'Error')
+  });
+});
 
 app.listen(PORT, () => console.log(`GoodKit Marketplace running on port ${PORT}`));
 

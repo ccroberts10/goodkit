@@ -4,7 +4,9 @@
     { "source": "/marketplace", "destination": "/goodkit-marketplace.html" },
     { "source": "/sell", "destination": "/goodkit-seller-portal.html" },
     { "source": "/community/:slug", "destination": "/goodkit-community.html" },
-    { "source": "/shop/:slug", "destination": "/goodkit-shop.html" }
+    { "source": "/shop/:slug", "destination": "/goodkit-shop.html" },
+    { "source": "/privacy", "destination": "/privacy.html" },
+    { "source": "/terms", "destination": "/terms.html" }
   ],
   "headers": [
     {
