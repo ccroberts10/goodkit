@@ -1595,6 +1595,23 @@ app.patch('/admin/listings/:id', (req, res) => {
   catch(err) { res.status(500).json({ error: err.message }); }
 });
 
+app.patch('/admin/listings/:id/keywords', (req, res) => {
+  const key = req.headers['x-admin-key'] || req.body.adminKey;
+  if (key !== process.env.ADMIN_KEY) return res.status(401).json({ error: 'Unauthorized' });
+  const { keywords, title } = req.body;
+  try {
+    const updates = [];
+    const params = [];
+    if (keywords !== undefined) { updates.push('keywords=?'); params.push(keywords); }
+    if (title !== undefined)    { updates.push('title=?');    params.push(title); }
+    if (!updates.length) return res.status(400).json({ error: 'Provide keywords and/or title' });
+    params.push(req.params.id);
+    db.prepare(`UPDATE listings SET ${updates.join(',')} WHERE id=?`).run(...params);
+    const listing = db.prepare('SELECT id, title, keywords FROM listings WHERE id=?').get(req.params.id);
+    res.json({ success: true, listing });
+  } catch(err) { res.status(500).json({ error: err.message }); }
+});
+
 app.patch('/admin/listings/:id/stripe-account', (req, res) => {
   const { adminKey, stripe_account_id } = req.body;
   if (adminKey !== process.env.ADMIN_KEY) return res.status(401).json({ error: 'Unauthorized' });
