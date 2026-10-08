@@ -298,10 +298,11 @@ db.exec(`
   );
 `);
 
-// Community migrations for existing DBs
+// Migrations for existing DBs
 [
   `ALTER TABLE listings ADD COLUMN community_id TEXT DEFAULT NULL`,
   `ALTER TABLE communities ADD COLUMN featured_listing_ids TEXT DEFAULT '[]'`,
+  `ALTER TABLE listings ADD COLUMN delivery_type TEXT DEFAULT 'ship'`,
 ].forEach(sql => { try { db.exec(sql); } catch(e) {} });
 
 // One-time: clear old DBP stripe_account_id values so sellers re-onboard with new GoodKit Stripe account
