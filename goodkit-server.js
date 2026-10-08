@@ -1733,6 +1733,15 @@ app.get('/listing/:idslug', (req, res) => {
   <meta name="twitter:image" content="${photo}">
   <script type="application/ld+json">${JSON.stringify({
     "@context": "https://schema.org",
+    "@type": "BreadcrumbList",
+    "itemListElement": [
+      { "@type": "ListItem", "position": 1, "name": "GoodKit", "item": SITE_URL },
+      { "@type": "ListItem", "position": 2, "name": listing.category || "Gear", "item": `${SITE_URL}/marketplace` },
+      { "@type": "ListItem", "position": 3, "name": listing.title, "item": canonicalUrl }
+    ]
+  })}</script>
+  <script type="application/ld+json">${JSON.stringify({
+    "@context": "https://schema.org",
     "@type": "Product",
     "name": listing.title,
     "description": listing.description || desc,
@@ -1796,8 +1805,8 @@ app.get('/listing/:idslug', (req, res) => {
 <div class="container">
   <div class="layout">
     <div class="gallery">
-      ${photos[0] ? `<img class="gallery-main" id="mainPhoto" src="${SITE_URL}${photos[0]}" alt="${listing.title}">` : `<div class="gallery-main" style="display:flex;align-items:center;justify-content:center;font-size:48px;">🚴</div>`}
-      ${photos.length > 1 ? `<div class="gallery-thumbs">${photos.map((p, i) => `<img src="${SITE_URL}${p}" class="${i===0?'active':''}" onclick="setPhoto('${SITE_URL}${p}',this)" alt="Photo ${i+1}">`).join('')}</div>` : ''}
+      ${photos[0] ? `<img class="gallery-main" id="mainPhoto" src="${SITE_URL}${photos[0]}" alt="${listing.title} - ${listing.condition} condition - $${price}">` : `<div class="gallery-main" style="display:flex;align-items:center;justify-content:center;font-size:48px;">🚴</div>`}
+      ${photos.length > 1 ? `<div class="gallery-thumbs">${photos.map((p, i) => `<img src="${SITE_URL}${p}" class="${i===0?'active':''}" onclick="setPhoto('${SITE_URL}${p}',this)" alt="${listing.title} photo ${i+1}">`).join('')}</div>` : ''}
     </div>
     <div class="info">
       <h1 class="listing-title">${listing.title}</h1>
