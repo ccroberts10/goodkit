@@ -1677,11 +1677,26 @@ app.get('/admin/backups', async (req, res) => {
 
 const SITE_URL = 'https://good-kit.com';
 
+function slugify(str) {
+  return (str || '').toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '').slice(0, 60);
+}
+
 // Individual listing page — crawlable, OG-tagged, links to marketplace
-app.get('/listing/:id', (req, res) => {
+// Supports both /listing/:id and /listing/:id-slug (slug is ignored, id drives the lookup)
+app.get('/listing/:idslug', (req, res) => {
   try {
-    const listing = db.prepare("SELECT * FROM listings WHERE id=? AND status='approved'").get(req.params.id);
+    // Extract the UUID portion (first segment before any hyphen that follows a UUID pattern)
+    // UUIDs are 36 chars; if the param is longer, the id is the first 36 chars
+    const param = req.params.idslug;
+    const id = param.length > 36 ? param.slice(0, 36) : param;
+    const listing = db.prepare("SELECT * FROM listings WHERE id=? AND status='approved'").get(id);
     if (!listing) return res.status(404).send('<h1>Listing not found</h1>');
+
+    // Redirect bare /listing/:id to canonical slug URL (301 for SEO)
+    const canonicalSlug = `${listing.id}-${slugify(listing.title)}`;
+    if (param !== canonicalSlug) {
+      return res.redirect(301, `${SITE_URL}/listing/${canonicalSlug}`);
+    }
     const photos = JSON.parse(listing.photos || '[]');
     const price  = (listing.price / 100).toFixed(2);
     const photo  = photos[0] ? `${SITE_URL}${photos[0]}` : `${SITE_URL}/icon-512.png`;
@@ -1690,6 +1705,7 @@ app.get('/listing/:id', (req, res) => {
       ? listing.description.slice(0, 160)
       : `Used ${listing.category} for $${price}. ${listing.condition} condition. Buy on GoodKit, the cycling gear marketplace.`;
     const keywords = [listing.title, listing.category, listing.condition, ...(listing.keywords || '').split(',').map(k => k.trim()).filter(Boolean)].join(', ');
+    const canonicalUrl = `${SITE_URL}/listing/${listing.id}-${slugify(listing.title)}`;
 
     res.setHeader('Content-Type', 'text/html');
     res.send(`<!doctype html>
@@ -1700,14 +1716,14 @@ app.get('/listing/:id', (req, res) => {
   <title>${title}</title>
   <meta name="description" content="${desc}">
   <meta name="keywords" content="${keywords}">
-  <link rel="canonical" href="${SITE_URL}/listing/${listing.id}">
+  <link rel="canonical" href="${canonicalUrl}">
   <meta property="og:type" content="product">
   <meta property="og:title" content="${listing.title}">
   <meta property="og:description" content="${desc}">
   <meta property="og:image" content="${photo}">
   <meta property="og:image:width" content="1200">
   <meta property="og:image:height" content="630">
-  <meta property="og:url" content="${SITE_URL}/listing/${listing.id}">
+  <meta property="og:url" content="${canonicalUrl}">
   <meta property="og:site_name" content="GoodKit">
   <meta property="product:price:amount" content="${price}">
   <meta property="product:price:currency" content="USD">
@@ -1727,7 +1743,7 @@ app.get('/listing/:id', (req, res) => {
       "priceCurrency": "USD",
       "price": price,
       "availability": "https://schema.org/InStock",
-      "url": `${SITE_URL}/listing/${listing.id}`,
+      "url": canonicalUrl,
       "seller": { "@type": "Organization", "name": "GoodKit" },
       "itemCondition": listing.condition === 'New' ? "https://schema.org/NewCondition" : "https://schema.org/UsedCondition"
     },
@@ -1819,12 +1835,12 @@ function setPhoto(src, el){
 // Sitemap — includes all active listings
 app.get('/sitemap.xml', (req, res) => {
   try {
-    const listings = db.prepare("SELECT id, created_at FROM listings WHERE status='approved' ORDER BY created_at DESC LIMIT 1000").all();
+    const listings = db.prepare("SELECT id, title, created_at FROM listings WHERE status='approved' ORDER BY created_at DESC LIMIT 1000").all();
     const urls = [
       { loc: SITE_URL, priority: '1.0', changefreq: 'daily' },
       { loc: `${SITE_URL}/marketplace`, priority: '0.9', changefreq: 'hourly' },
       ...listings.map(l => ({
-        loc: `${SITE_URL}/listing/${l.id}`,
+        loc: `${SITE_URL}/listing/${l.id}-${slugify(l.title)}`,
         lastmod: l.created_at.split('T')[0],
         priority: '0.7',
         changefreq: 'weekly'
