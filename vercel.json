@@ -6,7 +6,9 @@
     { "source": "/community/:slug", "destination": "/goodkit-community.html" },
     { "source": "/shop/:slug", "destination": "/goodkit-shop.html" },
     { "source": "/privacy", "destination": "/privacy.html" },
-    { "source": "/terms", "destination": "/terms.html" }
+    { "source": "/terms", "destination": "/terms.html" },
+    { "source": "/listing/:id", "destination": "https://api.good-kit.com/listing/:id" },
+    { "source": "/sitemap.xml", "destination": "https://api.good-kit.com/sitemap.xml" }
   ],
   "headers": [
     {

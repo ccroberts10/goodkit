@@ -1775,7 +1775,7 @@ app.get('/listing/:id', (req, res) => {
 <body>
 <nav class="nav">
   <a class="nav-logo" href="${SITE_URL}">goodkit<span>.</span></a>
-  <a class="nav-cta" href="${SITE_URL}/goodkit-marketplace.html">Shop All Gear</a>
+  <a class="nav-cta" href="${SITE_URL}/marketplace">Shop All Gear</a>
 </nav>
 <div class="container">
   <div class="layout">
@@ -1797,7 +1797,7 @@ app.get('/listing/:id', (req, res) => {
         <div class="seller-name">Sold by <strong>${listing.seller_name}</strong></div>
       </div>
       <div class="cta-bar">
-        <a class="cta-btn" href="${SITE_URL}/goodkit-marketplace.html#${listing.id}">Buy on GoodKit →</a>
+        <a class="cta-btn" href="${SITE_URL}/marketplace#${listing.id}">Buy on GoodKit →</a>
         <div class="cta-sub">Secure checkout · Shippo-powered shipping · Seller keeps 85%</div>
       </div>
       ${keywords ? `<div class="section-label" style="margin-top:28px">Tags</div><div class="keywords-list">${keywords}</div>` : ''}
@@ -1822,7 +1822,7 @@ app.get('/sitemap.xml', (req, res) => {
     const listings = db.prepare("SELECT id, created_at FROM listings WHERE status='approved' ORDER BY created_at DESC LIMIT 1000").all();
     const urls = [
       { loc: SITE_URL, priority: '1.0', changefreq: 'daily' },
-      { loc: `${SITE_URL}/goodkit-marketplace.html`, priority: '0.9', changefreq: 'hourly' },
+      { loc: `${SITE_URL}/marketplace`, priority: '0.9', changefreq: 'hourly' },
       ...listings.map(l => ({
         loc: `${SITE_URL}/listing/${l.id}`,
         lastmod: l.created_at.split('T')[0],
