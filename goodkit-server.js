@@ -1631,6 +1631,31 @@ app.get('/admin/sales', (req, res) => {
   } catch(err) { res.status(500).json({ error: err.message }); }
 });
 
+// Analytics — listing views, top listings, daily traffic
+app.get('/admin/analytics', (req, res) => {
+  const key = req.headers['x-admin-key'] || req.query.key || req.query.adminKey;
+  if (key !== process.env.ADMIN_KEY) return res.status(401).json({ error: 'Unauthorized' });
+  try {
+    const topListings = db.prepare(`
+      SELECT id, title, category, price, condition, status, view_count, created_at
+      FROM listings
+      ORDER BY view_count DESC
+      LIMIT 20
+    `).all().map(l => ({ ...l, price: l.price / 100 }));
+
+    const totalViews   = db.prepare("SELECT COALESCE(SUM(view_count),0) AS total FROM listings").get().total;
+    const activeCount  = db.prepare("SELECT COUNT(*) AS n FROM listings WHERE status='approved'").get().n;
+    const soldCount    = db.prepare("SELECT COUNT(*) AS n FROM listings WHERE status='sold'").get().n;
+    const alertCount   = db.prepare("SELECT COUNT(*) AS n FROM listing_alerts WHERE active=1").get().n;
+
+    res.json({
+      success: true,
+      summary: { totalViews, activeListings: activeCount, soldListings: soldCount, alertSubscribers: alertCount },
+      topListings
+    });
+  } catch(err) { res.status(500).json({ error: err.message }); }
+});
+
 // Utility: preview fee split for any price
 app.get('/split/:price', (req, res) => {
   const priceInCents = Math.round(parseFloat(req.params.price) * 100);
