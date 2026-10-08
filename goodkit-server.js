@@ -1901,7 +1901,7 @@ app.get('/sitemap.xml', (req, res) => {
       { loc: `${SITE_URL}/marketplace`, priority: '0.9', changefreq: 'hourly' },
       ...listings.map(l => ({
         loc: `${SITE_URL}/listing/${l.id}-${slugify(l.title)}`,
-        lastmod: l.created_at.split('T')[0],
+        lastmod: l.created_at.replace(' ', 'T').split('T')[0],
         priority: '0.7',
         changefreq: 'weekly'
       }))
