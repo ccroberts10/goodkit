@@ -1567,6 +1567,15 @@ app.post('/admin/release-payouts', async (req, res) => {
   } catch(err) { res.status(500).json({ error: err.message }); }
 });
 
+app.get('/admin/alerts', (req, res) => {
+  const key = req.headers['x-admin-key'] || req.query.key || req.query.adminKey;
+  if (key !== process.env.ADMIN_KEY) return res.status(401).json({ error: 'Unauthorized' });
+  try {
+    const alerts = db.prepare("SELECT email, category, max_price, condition, active, created_at FROM listing_alerts ORDER BY created_at DESC").all();
+    res.json({ success: true, count: alerts.length, alerts });
+  } catch(err) { res.status(500).json({ error: err.message }); }
+});
+
 app.get('/admin/listings', (req, res) => {
   const { adminKey } = req.query;
   if (adminKey !== process.env.ADMIN_KEY) return res.status(401).json({ error: 'Unauthorized' });
