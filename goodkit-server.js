@@ -217,6 +217,10 @@ db.exec(`
   // CCX: sales ccx fund amount
   `ALTER TABLE sales ADD COLUMN ccx_fund INTEGER DEFAULT 0`,
   `ALTER TABLE sales ADD COLUMN ccx_code TEXT DEFAULT NULL`,
+  // Buyer protection: explicit hold window and dispute flag
+  `ALTER TABLE sales ADD COLUMN payout_after TEXT DEFAULT NULL`,
+  `ALTER TABLE sales ADD COLUMN buyer_flagged INTEGER DEFAULT 0`,
+  `ALTER TABLE sales ADD COLUMN flag_reason TEXT DEFAULT NULL`,
 ].forEach(sql => { try { db.exec(sql); } catch(e) {} });
 
 // Shop consignment migrations
@@ -940,7 +944,8 @@ app.post('/checkout', async (req, res) => {
     const paymentIntent = await stripe.paymentIntents.create(piParams);
 
     const saleId = uuidv4();
-    db.prepare(`INSERT INTO sales (id,listing_id,buyer_email,buyer_name,buyer_street1,buyer_city,buyer_state,buyer_zip,payment_intent_id,amount,seller_payout,platform_payout,delivery_type,label_tier,ccx_code,ccx_fund) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`)
+    const payoutAfter = new Date(Date.now() + 72 * 60 * 60 * 1000).toISOString();
+    db.prepare(`INSERT INTO sales (id,listing_id,buyer_email,buyer_name,buyer_street1,buyer_city,buyer_state,buyer_zip,payment_intent_id,amount,seller_payout,platform_payout,delivery_type,label_tier,ccx_code,ccx_fund,payout_after) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`)
       .run(saleId, listingId, buyerEmail,
         buyerName || '', buyerStreet1 || '', buyerCity || '', buyerState || '', buyerZip || '',
         paymentIntent.id, listing.price,
@@ -949,7 +954,8 @@ app.post('/checkout', async (req, res) => {
         resolvedDeliveryType,
         labelInfo.tier,
         listing.ccx_code || null,
-        Math.round((split.ccxFund || 0) * 100)
+        Math.round((split.ccxFund || 0) * 100),
+        payoutAfter
       );
 
     res.json({
@@ -1274,8 +1280,37 @@ app.post('/webhook', async (req, res) => {
          </div>`
       ));
 
-      // Email buyer with tracking if we got it
-      if (!isPickup && trackingNumber) {
+      // Email buyer — purchase confirmation with buyer protection notice
+      const payoutAfterDate = new Date(Date.now() + 72 * 60 * 60 * 1000);
+      const protectionDeadline = payoutAfterDate.toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric', hour: 'numeric', minute: '2-digit', timeZoneName: 'short' });
+      const flagUrl = `${process.env.SITE_URL || 'https://good-kit.com'}/flag-purchase?sale=${sale.id}&email=${encodeURIComponent(sale.buyer_email)}`;
+      const buyerPickupNote = isPickup
+        ? `<p style="font-size:13px;color:#555;margin:8px 0 0;">📍 This is a local pickup — coordinate with the seller to arrange a meetup.</p>`
+        : isDetour
+        ? `<p style="font-size:13px;color:#555;margin:8px 0 0;">🚗 A Detour courier will deliver your item — you'll receive a separate notification when pickup is scheduled.</p>`
+        : trackingNumber
+          ? `<p style="font-size:13px;color:#555;margin:0 0 10px;">📦 Your item has been shipped.</p>
+             <p style="font-size:13px;color:#555;margin:0 0 4px;"><strong>Tracking:</strong> ${trackingNumber}</p>
+             ${trackingUrl ? `<a href="${trackingUrl}" style="display:inline-block;background:#FF5C1A;color:white;padding:10px 20px;font-size:13px;font-weight:600;text-decoration:none;margin-top:8px;">Track Package →</a>` : ''}`
+          : `<p style="font-size:13px;color:#555;margin:8px 0 0;">📦 Your item will ship soon — you'll receive a tracking number once it's on its way.</p>`;
+
+      await sendEmail(sale.buyer_email, `Order confirmed: ${listing.title}`, emailTemplate('Order Confirmed ✓',
+        `<p style="font-size:15px;color:#1A1A14;margin:0 0 16px;">Thanks for your purchase! Your <strong>${listing.title}</strong> is confirmed.</p>
+         <div style="background:#E8E0D0;padding:16px 20px;margin-bottom:20px;">
+           <p style="font-size:13px;color:#888;margin:0 0 4px;">Amount paid</p>
+           <p style="font-size:28px;font-weight:700;color:#1A1A14;margin:0 0 16px;">$${(sale.amount/100).toFixed(2)}</p>
+           ${buyerPickupNote}
+         </div>
+         <div style="background:#EBF4EF;border:1px solid #1D5C3A;padding:16px 20px;margin-bottom:20px;">
+           <p style="font-size:14px;font-weight:700;color:#1D5C3A;margin:0 0 8px;">🛡️ GoodKit Buyer Protection</p>
+           <p style="font-size:13px;color:#333;margin:0 0 8px;">The seller's payout is held for <strong>72 hours</strong> after your purchase. If the item doesn't arrive, isn't as described, or something is wrong — flag it before <strong>${protectionDeadline}</strong> and we'll step in.</p>
+           <a href="${flagUrl}" style="display:inline-block;background:#1D5C3A;color:white;padding:10px 20px;font-size:13px;font-weight:600;text-decoration:none;">Report a Problem →</a>
+         </div>
+         <p style="font-size:12px;color:#888;margin:0;">Questions? Reply to this email and we'll help.</p>`
+      ));
+
+      // Also send shipping notification separately if we have tracking
+      if (!isPickup && !isDetour && trackingNumber) {
         await sendEmail(sale.buyer_email, `Your ${listing.title} is on its way!`, emailTemplate('Order Shipped 📦',
           `<p style="font-size:15px;color:#1A1A14;margin:0 0 16px;">Great news — your <strong>${listing.title}</strong> has been shipped!</p>
            <div style="background:#E8E0D0;padding:16px 20px;margin-bottom:20px;">
@@ -1554,16 +1589,74 @@ app.post('/admin/release-payouts', async (req, res) => {
   const { adminKey } = req.body;
   if (adminKey !== process.env.ADMIN_KEY) return res.status(401).json({ error: 'Unauthorized' });
   try {
-    const cutoff  = new Date(Date.now() - 72 * 60 * 60 * 1000).toISOString();
-    const pending = db.prepare("SELECT s.*, l.stripe_account_id FROM sales s JOIN listings l ON s.listing_id=l.id WHERE s.status='delivered' AND s.created_at<?").all(cutoff);
-    let released  = 0;
+    const now = new Date().toISOString();
+    // Use payout_after if set; fall back to 72hr from created_at for older rows
+    const pending = db.prepare(`
+      SELECT s.*, l.stripe_account_id FROM sales s
+      JOIN listings l ON s.listing_id = l.id
+      WHERE s.status = 'delivered'
+        AND s.buyer_flagged = 0
+        AND (
+          (s.payout_after IS NOT NULL AND s.payout_after <= ?)
+          OR (s.payout_after IS NULL AND s.created_at <= datetime(?, '-72 hours'))
+        )
+    `).all(now, now);
+    let released = 0;
     for (const sale of pending) {
       try {
         db.prepare("UPDATE sales SET status='paid_out' WHERE id=?").run(sale.id);
         released++;
       } catch(err) { console.error('Payout error', sale.id, err.message); }
     }
-    res.json({ success: true, released });
+    // Count how many are held due to disputes
+    const flagged = db.prepare("SELECT COUNT(*) as n FROM sales WHERE status='delivered' AND buyer_flagged=1").get().n;
+    res.json({ success: true, released, held_for_dispute: flagged });
+  } catch(err) { res.status(500).json({ error: err.message }); }
+});
+
+// Buyer flags a problem — holds payout until admin resolves
+app.post('/sales/:id/flag', async (req, res) => {
+  try {
+    const { email, reason } = req.body;
+    if (!email || !reason) return res.status(400).json({ error: 'email and reason required' });
+    const sale = db.prepare("SELECT * FROM sales WHERE id=?").get(req.params.id);
+    if (!sale) return res.status(404).json({ error: 'Sale not found' });
+    if (sale.buyer_email.toLowerCase() !== email.toLowerCase())
+      return res.status(403).json({ error: 'Email does not match this order' });
+    if (sale.status === 'paid_out')
+      return res.status(400).json({ error: 'Payout window has closed — contact support directly.' });
+    if (sale.buyer_flagged)
+      return res.status(400).json({ error: 'This order is already flagged — we will follow up.' });
+
+    db.prepare("UPDATE sales SET buyer_flagged=1, flag_reason=? WHERE id=?").run(reason, sale.id);
+
+    // Notify admin
+    const listing = db.prepare("SELECT title FROM listings WHERE id=?").get(sale.listing_id);
+    await sendEmail(process.env.NOTIFY_EMAIL || 'ccroberts10@gmail.com',
+      `[GoodKit] DISPUTE: ${listing?.title || sale.listing_id}`,
+      `Sale ID: ${sale.id}\nBuyer: ${sale.buyer_email}\nReason: ${reason}\nAmount: $${(sale.amount/100).toFixed(2)}\nSeller payout HELD.`
+    );
+
+    res.json({ success: true, message: 'Your dispute has been filed. We will review and follow up within 24 hours. The seller payout is on hold.' });
+  } catch(err) { res.status(500).json({ error: err.message }); }
+});
+
+// Admin resolves a dispute — releases or refunds
+app.post('/admin/sales/:id/resolve-flag', (req, res) => {
+  const { adminKey, resolution } = req.body; // resolution: 'release' | 'refund'
+  if (adminKey !== process.env.ADMIN_KEY) return res.status(401).json({ error: 'Unauthorized' });
+  if (!['release', 'refund'].includes(resolution)) return res.status(400).json({ error: "resolution must be 'release' or 'refund'" });
+  try {
+    const sale = db.prepare("SELECT * FROM sales WHERE id=?").get(req.params.id);
+    if (!sale) return res.status(404).json({ error: 'Sale not found' });
+    if (resolution === 'release') {
+      db.prepare("UPDATE sales SET buyer_flagged=0, flag_reason=NULL, status='paid_out' WHERE id=?").run(req.params.id);
+      res.json({ success: true, action: 'released — payout marked paid_out' });
+    } else {
+      // Mark as refunded — actual Stripe refund must be issued manually for now
+      db.prepare("UPDATE sales SET buyer_flagged=0, status='refunded' WHERE id=?").run(req.params.id);
+      res.json({ success: true, action: 'marked refunded — issue Stripe refund manually in dashboard', payment_intent_id: sale.payment_intent_id });
+    }
   } catch(err) { res.status(500).json({ error: err.message }); }
 });
 
