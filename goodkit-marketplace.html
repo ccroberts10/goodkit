@@ -395,7 +395,11 @@ function renderModal(l){
       <button class="btn btn-primary" onclick="openCheckout()">Buy Now — $${total}</button>
       <button class="btn btn-outline" onclick="openOffer()">Make an Offer</button>
     </div>
-    <div class="modal-fine">seller keeps 88% · secured by Stripe</div>
+    <div class="modal-fine">seller keeps 85% · secured by Stripe</div>
+    <div style="display:flex;align-items:center;justify-content:center;gap:6px;margin-top:8px;padding:7px 12px;background:rgba(26,107,60,0.07);border-radius:6px;border:1px solid rgba(26,107,60,0.18);">
+      <span style="font-size:14px;">🛡️</span>
+      <span style="font-size:11px;color:#1A6B3C;font-weight:600;">72-hour buyer protection — <a href="/flag-purchase.html" style="color:#1A6B3C;" onclick="event.stopPropagation()">learn more</a></span>
+    </div>
     <div style="text-align:center;margin-top:8px;">
       <a href="https://good-kit.com/listing/${l.id}" target="_blank" style="font-size:11px;color:var(--ink-soft);text-decoration:none;" onclick="event.stopPropagation()">🔗 Share listing</a>
     </div>

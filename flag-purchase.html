@@ -1,0 +1,494 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+<title>GoodKit — Report a Problem</title>
+<link rel="manifest" href="/manifest.json">
+<link rel="apple-touch-icon" href="/icon-180.png">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="GoodKit">
+<meta name="theme-color" content="#FF5C1A">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Space+Mono:wght@400;700&family=DM+Mono:wght@400;500&display=swap">
+<style>
+@font-face {
+  font-family: 'ABC Maxi Round';
+  src: url('/fonts/ABCMaxiRound-Bold.woff2') format('woff2');
+  font-weight: 700;
+  font-display: swap;
+}
+:root {
+  --brand: 'ABC Maxi Round', system-ui, sans-serif;
+  --body: 'Space Mono', monospace;
+  --mono: 'DM Mono', monospace;
+  --orange: #F2C12E;
+  --orange-dark: #D9A820;
+  --ink: #0a0a0a;
+  --ink-soft: #444444;
+  --muted: #6B6B6B;
+  --border: #E5E5E5;
+  --bg: #f5f5f0;
+  --bg-subtle: #eeebe3;
+  --bg-warm: #f5f5f0;
+  --red: #D93025;
+  --red-lt: #FFF0EF;
+  --green: #1A6B3C;
+  --green-lt: #EDF7F1;
+  --radius: 8px;
+  --shadow-sm: 0 1px 3px rgba(0,0,0,0.07);
+  --shadow-md: 0 4px 12px rgba(0,0,0,0.10);
+}
+
+*, *::before, *::after { box-sizing: border-box; }
+
+body {
+  font-family: var(--body);
+  background: var(--bg);
+  color: var(--ink);
+  -webkit-font-smoothing: antialiased;
+  margin: 0;
+  min-height: 100vh;
+}
+
+/* Nav */
+nav {
+  position: sticky;
+  top: 0;
+  z-index: 100;
+  background: var(--ink);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: env(safe-area-inset-top, 0px) 28px 0;
+  height: calc(56px + env(safe-area-inset-top, 0px));
+  border-bottom: 1px solid rgba(255,255,255,0.06);
+}
+.nav-logo {
+  font-family: var(--brand);
+  font-weight: 700;
+  font-size: 21px;
+  color: #fff;
+  text-decoration: none;
+  letter-spacing: -0.3px;
+}
+.nav-logo .dot { color: var(--orange); }
+.nav-back {
+  font-size: 12px;
+  color: rgba(255,255,255,0.55);
+  text-decoration: none;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  transition: color 0.15s;
+}
+.nav-back:hover { color: #fff; }
+
+/* Page */
+.page {
+  max-width: 540px;
+  margin: 0 auto;
+  padding: 40px 20px 80px;
+}
+
+/* Header */
+.page-eyebrow {
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--red);
+  margin-bottom: 8px;
+}
+.page-title {
+  font-family: var(--brand);
+  font-size: 26px;
+  font-weight: 700;
+  letter-spacing: -0.3px;
+  margin: 0 0 10px;
+}
+.page-sub {
+  font-size: 13px;
+  color: var(--muted);
+  line-height: 1.6;
+  margin: 0 0 32px;
+}
+
+/* Protection callout */
+.protection-box {
+  background: var(--green-lt);
+  border: 1.5px solid var(--green);
+  border-radius: var(--radius);
+  padding: 14px 16px;
+  margin-bottom: 28px;
+  display: flex;
+  gap: 10px;
+  align-items: flex-start;
+}
+.protection-icon {
+  font-size: 18px;
+  flex-shrink: 0;
+  margin-top: 1px;
+}
+.protection-text {
+  font-size: 12px;
+  color: var(--green);
+  line-height: 1.55;
+}
+.protection-text strong {
+  display: block;
+  font-weight: 700;
+  margin-bottom: 2px;
+}
+
+/* Order info card */
+.order-card {
+  background: var(--bg-subtle);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 14px 16px;
+  margin-bottom: 24px;
+  font-size: 13px;
+}
+.order-card-row {
+  display: flex;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 3px 0;
+  color: var(--ink-soft);
+}
+.order-card-row span:first-child { color: var(--muted); }
+.order-card-row span:last-child { font-family: var(--mono); font-size: 12px; }
+
+/* Form */
+.form-group { margin-bottom: 18px; }
+.form-label {
+  display: block;
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--ink);
+  margin-bottom: 6px;
+}
+.form-input, .form-textarea, .form-select {
+  border: 1.5px solid var(--border);
+  border-radius: 6px;
+  padding: 9px 12px;
+  font-size: 14px;
+  font-family: var(--body);
+  color: var(--ink);
+  background: white;
+  width: 100%;
+  transition: border-color 0.15s;
+}
+.form-input:focus, .form-textarea:focus, .form-select:focus {
+  outline: none;
+  border-color: var(--orange);
+}
+.form-textarea {
+  resize: vertical;
+  min-height: 100px;
+  line-height: 1.6;
+}
+.form-hint { font-size: 11px; color: var(--muted); margin-top: 5px; }
+
+/* Reason chips */
+.reason-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-bottom: 18px;
+}
+.reason-chip {
+  cursor: pointer;
+  border: 1.5px solid var(--border);
+  border-radius: 20px;
+  padding: 5px 13px;
+  font-size: 12px;
+  font-family: var(--body);
+  background: white;
+  color: var(--ink-soft);
+  transition: all 0.12s;
+  user-select: none;
+}
+.reason-chip:hover { border-color: var(--orange); color: var(--ink); }
+.reason-chip.selected {
+  border-color: var(--red);
+  background: var(--red-lt);
+  color: var(--red);
+  font-weight: 700;
+}
+
+/* Submit button */
+.btn-submit {
+  width: 100%;
+  padding: 13px;
+  background: var(--red);
+  color: white;
+  border: none;
+  border-radius: 6px;
+  font-family: var(--body);
+  font-size: 14px;
+  font-weight: 700;
+  cursor: pointer;
+  transition: opacity 0.15s;
+  margin-top: 8px;
+}
+.btn-submit:hover { opacity: 0.88; }
+.btn-submit:disabled { opacity: 0.45; cursor: not-allowed; }
+
+/* States */
+.state { display: none; }
+.state.active { display: block; }
+
+/* Success */
+.success-box {
+  text-align: center;
+  padding: 32px 24px;
+  background: var(--green-lt);
+  border: 1.5px solid var(--green);
+  border-radius: var(--radius);
+  margin-top: 12px;
+}
+.success-icon { font-size: 40px; margin-bottom: 12px; }
+.success-title {
+  font-family: var(--brand);
+  font-size: 20px;
+  font-weight: 700;
+  color: var(--green);
+  margin: 0 0 8px;
+}
+.success-msg { font-size: 13px; color: var(--muted); line-height: 1.6; }
+
+/* Error */
+.error-banner {
+  background: var(--red-lt);
+  border: 1.5px solid var(--red);
+  border-radius: 6px;
+  padding: 11px 14px;
+  font-size: 13px;
+  color: var(--red);
+  margin-bottom: 16px;
+  display: none;
+}
+.error-banner.visible { display: block; }
+
+/* Already paid */
+.already-box {
+  background: var(--bg-subtle);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 24px;
+  text-align: center;
+}
+.already-box p { font-size: 13px; color: var(--muted); margin: 8px 0 0; }
+
+/* No params */
+.no-params {
+  text-align: center;
+  padding: 60px 24px;
+}
+.no-params p { font-size: 13px; color: var(--muted); margin: 10px 0 0; }
+.no-params a { color: var(--orange); }
+</style>
+</head>
+<body>
+
+<nav>
+  <a class="nav-logo" href="/">Good<span class="dot">.</span>Kit</a>
+  <a class="nav-back" href="/goodkit-marketplace.html">
+    ← Back to marketplace
+  </a>
+</nav>
+
+<div class="page">
+
+  <!-- No params state -->
+  <div id="stateNoParams" class="state">
+    <div class="no-params">
+      <div style="font-size:40px">⚠️</div>
+      <div style="font-family:var(--brand);font-size:20px;font-weight:700;margin-top:12px;">Invalid link</div>
+      <p>This dispute link doesn't look right. Check your purchase confirmation email for the correct link, or <a href="/goodkit-marketplace.html">browse the marketplace</a>.</p>
+    </div>
+  </div>
+
+  <!-- Form state -->
+  <div id="stateForm" class="state">
+    <div class="page-eyebrow">Buyer Protection</div>
+    <h1 class="page-title">Report a Problem</h1>
+    <p class="page-sub">Your payout to the seller is on hold while we review your dispute. Submit your concern below and GoodKit will follow up within 24 hours.</p>
+
+    <div class="protection-box">
+      <div class="protection-icon">🛡️</div>
+      <div class="protection-text">
+        <strong>72-Hour Buyer Protection Active</strong>
+        Seller payment is frozen while your dispute is reviewed. You can report a problem any time within your protection window.
+      </div>
+    </div>
+
+    <div id="orderCard" class="order-card">
+      <div class="order-card-row">
+        <span>Order</span>
+        <span id="orderIdDisplay">—</span>
+      </div>
+      <div class="order-card-row">
+        <span>Buyer email</span>
+        <span id="buyerEmailDisplay">—</span>
+      </div>
+    </div>
+
+    <form id="flagForm" novalidate>
+      <div class="form-group">
+        <div class="form-label">What's the issue?</div>
+        <div class="reason-chips" id="reasonChips">
+          <div class="reason-chip" data-val="Item not received">Item not received</div>
+          <div class="reason-chip" data-val="Item not as described">Not as described</div>
+          <div class="reason-chip" data-val="Item damaged">Item damaged</div>
+          <div class="reason-chip" data-val="Wrong item received">Wrong item received</div>
+          <div class="reason-chip" data-val="Other">Other</div>
+        </div>
+      </div>
+
+      <div class="form-group">
+        <label class="form-label" for="detailInput">Details</label>
+        <textarea id="detailInput" class="form-textarea" placeholder="Describe the problem in as much detail as possible. Include photos if you have them." maxlength="2000"></textarea>
+        <div class="form-hint">The more detail, the faster we can resolve this.</div>
+      </div>
+
+      <div id="errorBanner" class="error-banner"></div>
+
+      <button type="submit" id="submitBtn" class="btn-submit" disabled>Submit Dispute</button>
+    </form>
+  </div>
+
+  <!-- Success state -->
+  <div id="stateSuccess" class="state">
+    <div class="success-box">
+      <div class="success-icon">✅</div>
+      <div class="success-title">Dispute Filed</div>
+      <p class="success-msg">Your dispute has been submitted. The seller's payout is frozen and GoodKit will review your claim within 24 hours. Check your email for confirmation.</p>
+    </div>
+    <div style="text-align:center;margin-top:24px;">
+      <a href="/goodkit-marketplace.html" style="font-size:13px;color:var(--muted);text-decoration:none;">← Back to marketplace</a>
+    </div>
+  </div>
+
+  <!-- Already paid / window closed state -->
+  <div id="stateExpired" class="state">
+    <div class="already-box">
+      <div style="font-size:32px">⏱️</div>
+      <div style="font-family:var(--brand);font-size:18px;font-weight:700;margin-top:10px;">Protection window closed</div>
+      <p>The seller has already been paid out for this order. If you believe you were defrauded, contact us directly at <strong>hello@good-kit.com</strong> and we'll do our best to help.</p>
+    </div>
+  </div>
+
+  <!-- Already flagged state -->
+  <div id="stateFlagged" class="state">
+    <div class="already-box">
+      <div style="font-size:32px">📋</div>
+      <div style="font-family:var(--brand);font-size:18px;font-weight:700;margin-top:10px;">Dispute already filed</div>
+      <p>A dispute is already open for this order. We'll reach out to the email on file once we've reviewed it.</p>
+    </div>
+  </div>
+
+</div>
+
+<script>
+  const API = 'https://api.good-kit.com';
+  const params = new URLSearchParams(location.search);
+  const saleId = params.get('sale');
+  const email = params.get('email');
+
+  let selectedReason = '';
+
+  function showState(id) {
+    document.querySelectorAll('.state').forEach(el => el.classList.remove('active'));
+    document.getElementById(id).classList.add('active');
+  }
+
+  function init() {
+    if (!saleId || !email) {
+      showState('stateNoParams');
+      return;
+    }
+
+    document.getElementById('orderIdDisplay').textContent = saleId.slice(0, 8).toUpperCase();
+    document.getElementById('buyerEmailDisplay').textContent = email;
+    showState('stateForm');
+  }
+
+  // Reason chip selection
+  document.querySelectorAll('.reason-chip').forEach(chip => {
+    chip.addEventListener('click', () => {
+      document.querySelectorAll('.reason-chip').forEach(c => c.classList.remove('selected'));
+      chip.classList.add('selected');
+      selectedReason = chip.dataset.val;
+      updateSubmitState();
+    });
+  });
+
+  function updateSubmitState() {
+    const detail = document.getElementById('detailInput').value.trim();
+    document.getElementById('submitBtn').disabled = !selectedReason || !detail;
+  }
+
+  document.getElementById('detailInput').addEventListener('input', updateSubmitState);
+
+  // Submit
+  document.getElementById('flagForm').addEventListener('submit', async (e) => {
+    e.preventDefault();
+    const btn = document.getElementById('submitBtn');
+    const errorBanner = document.getElementById('errorBanner');
+    const detail = document.getElementById('detailInput').value.trim();
+    const reason = selectedReason + (detail ? ': ' + detail : '');
+
+    btn.disabled = true;
+    btn.textContent = 'Submitting…';
+    errorBanner.classList.remove('visible');
+
+    try {
+      const res = await fetch(`${API}/sales/${encodeURIComponent(saleId)}/flag`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email, reason })
+      });
+
+      const data = await res.json();
+
+      if (res.ok && data.success) {
+        showState('stateSuccess');
+        return;
+      }
+
+      // Handle specific error cases
+      if (res.status === 409) {
+        if (data.error && data.error.includes('paid')) {
+          showState('stateExpired');
+        } else if (data.error && data.error.includes('flagged')) {
+          showState('stateFlagged');
+        } else {
+          showState('stateExpired');
+        }
+        return;
+      }
+
+      // Generic error
+      errorBanner.textContent = data.error || 'Something went wrong. Please try again.';
+      errorBanner.classList.add('visible');
+      btn.disabled = false;
+      btn.textContent = 'Submit Dispute';
+
+    } catch (err) {
+      errorBanner.textContent = 'Network error. Check your connection and try again.';
+      errorBanner.classList.add('visible');
+      btn.disabled = false;
+      btn.textContent = 'Submit Dispute';
+    }
+  });
+
+  init();
+</script>
+</body>
+</html>
