@@ -60,6 +60,8 @@ body{font-family:var(--body);background:var(--bg);color:var(--ink);-webkit-font-
 .btn-outline{background:transparent;color:var(--ink);border:1.5px solid var(--border);}
 .btn-outline:hover{border-color:var(--ink);}
 .btn-danger{background:transparent;color:#c0392b;border:1.5px solid #c0392b;}
+.btn-warning{background:transparent;color:#b45309;border:1.5px solid #b45309;}
+.btn-warning:hover{background:#fef3c7;}
 .btn-sm{padding:6px 13px;font-size:13px;}
 .btn-xs{padding:4px 9px;font-size:12px;border-radius:5px;}
 nav{position:sticky;top:0;z-index:100;background:var(--ink);display:flex;align-items:center;justify-content:space-between;padding:env(safe-area-inset-top,0px) 28px 0;height:calc(56px + env(safe-area-inset-top,0px));border-bottom:1px solid rgba(255,255,255,0.06);}
@@ -654,6 +656,7 @@ function renderListings(listings){
       <div class="listing-price">$${Number(l.price).toFixed(0)}</div>
       <div class="listing-actions">
         <button class="btn btn-outline btn-xs" onclick="toggleEdit('${l.id}',${Number(l.price).toFixed(2)},'${(l.category||'').replace(/'/g,"\\'")}','${(l.size||'').replace(/'/g,"\\'")}')">Edit</button>
+        ${l.status==='approved'?`<button class="btn btn-warning btn-xs" onclick="markSoldElsewhere('${l.id}','${(l.title||'').replace(/'/g,"\\'")}')">Sold Elsewhere</button>`:''}
         <button class="btn btn-danger btn-xs" onclick="deleteListing('${l.id}','${(l.title||'').replace(/'/g,"\\'")}')">Delete</button>
       </div>
     </div>
@@ -798,6 +801,16 @@ async function deleteListing(id,title){
     if(!r.ok)throw new Error(d.error||'Error');
     showToast('Listing deleted');loadDashData();
   }catch(e){showToast(e.message||'Could not delete','error');}
+}
+
+async function markSoldElsewhere(id,title){
+  if(!confirm('Mark "'+title+'" as sold?\n\nThis removes it from the marketplace immediately.'))return;
+  try{
+    const r=await fetch(API+'/listings/'+id,{method:'PATCH',headers:{'Content-Type':'application/json'},body:JSON.stringify({token:SESSION,status:'sold'})});
+    const d=await r.json();
+    if(!r.ok)throw new Error(d.error||'Error');
+    showToast('Listing removed — marked as sold');loadDashData();
+  }catch(e){showToast(e.message||'Could not update listing','error');}
 }
 
 function renderOffers(offers,listings){
@@ -969,7 +982,17 @@ async function runAiAssist(){
     status.style.display='none';
     btn.textContent='✨ Re-analyze photo';
     btn.disabled=false;
-    showToast('Listing filled from photo!','success');
+    // Show AI spec disclaimer
+    let disclaimer=document.getElementById('aiDisclaimer');
+    if(!disclaimer){
+      disclaimer=document.createElement('div');
+      disclaimer.id='aiDisclaimer';
+      disclaimer.style.cssText='margin-top:12px;padding:10px 14px;background:rgba(180,83,9,0.07);border:1px solid rgba(180,83,9,0.25);border-radius:8px;font-size:12px;color:#92400e;line-height:1.6;';
+      disclaimer.innerHTML='⚠️ <strong>Verify specs before publishing.</strong> AI-generated descriptions may contain errors. Double-check measurements (fork length, frame size, gear specs) against the actual item. You are responsible for listing accuracy.';
+      document.getElementById('aiPriceHint').parentNode.insertBefore(disclaimer, document.getElementById('aiPriceHint').nextSibling);
+    }
+    disclaimer.style.display='block';
+    showToast('Listing filled — verify specs before publishing','success');
     updateFeeCalc();
   }catch(err){
     status.textContent='AI assist failed: '+err.message;

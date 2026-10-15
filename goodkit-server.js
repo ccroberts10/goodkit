@@ -1134,12 +1134,19 @@ app.patch('/listings/:id', (req, res) => {
     const listing = db.prepare("SELECT * FROM listings WHERE id=?").get(req.params.id);
     if (!listing) return res.status(404).json({ error: 'Listing not found' });
     if (listing.seller_email !== session.email) return res.status(403).json({ error: 'Unauthorized' });
-    const { price, category, size, keywords } = req.body;
+    const { price, category, size, keywords, status, title, description } = req.body;
     if (price !== undefined && (isNaN(price) || Number(price) < 1)) return res.status(400).json({ error: 'Invalid price' });
     if (price !== undefined) db.prepare("UPDATE listings SET price=? WHERE id=?").run(Math.round(Number(price) * 100), req.params.id);
     if (category !== undefined) db.prepare("UPDATE listings SET category=? WHERE id=?").run(category, req.params.id);
     if (size !== undefined) db.prepare("UPDATE listings SET size=? WHERE id=?").run(size, req.params.id);
     if (keywords !== undefined) db.prepare("UPDATE listings SET keywords=? WHERE id=?").run(keywords, req.params.id);
+    if (title !== undefined && title.trim()) db.prepare("UPDATE listings SET title=? WHERE id=?").run(title.trim(), req.params.id);
+    if (description !== undefined) db.prepare("UPDATE listings SET description=? WHERE id=?").run(description, req.params.id);
+    // Allow seller to mark as sold (sold elsewhere) or reactivate (approved)
+    if (status !== undefined && ['sold','approved'].includes(status)) {
+      const soldAt = status === 'sold' ? ", sold_at=datetime('now')" : ', sold_at=NULL';
+      db.prepare(`UPDATE listings SET status=?${soldAt} WHERE id=?`).run(status, req.params.id);
+    }
     res.json({ success: true });
   } catch(err) { res.status(500).json({ error: err.message }); }
 });
