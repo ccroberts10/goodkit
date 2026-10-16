@@ -221,6 +221,9 @@ db.exec(`
   `ALTER TABLE sales ADD COLUMN payout_after TEXT DEFAULT NULL`,
   `ALTER TABLE sales ADD COLUMN buyer_flagged INTEGER DEFAULT 0`,
   `ALTER TABLE sales ADD COLUMN flag_reason TEXT DEFAULT NULL`,
+  // Listing lifecycle: re-engagement nudge + auto-expire
+  `ALTER TABLE listings ADD COLUMN reminded_at TEXT DEFAULT NULL`,
+  `ALTER TABLE listings ADD COLUMN final_warned_at TEXT DEFAULT NULL`,
 ].forEach(sql => { try { db.exec(sql); } catch(e) {} });
 
 // Shop consignment migrations
@@ -1143,9 +1146,14 @@ app.patch('/listings/:id', (req, res) => {
     if (title !== undefined && title.trim()) db.prepare("UPDATE listings SET title=? WHERE id=?").run(title.trim(), req.params.id);
     if (description !== undefined) db.prepare("UPDATE listings SET description=? WHERE id=?").run(description, req.params.id);
     // Allow seller to mark as sold (sold elsewhere) or reactivate (approved)
-    if (status !== undefined && ['sold','approved'].includes(status)) {
-      const soldAt = status === 'sold' ? ", sold_at=datetime('now')" : ', sold_at=NULL';
-      db.prepare(`UPDATE listings SET status=?${soldAt} WHERE id=?`).run(status, req.params.id);
+    if (status !== undefined && ['sold','approved','expired'].includes(status)) {
+      let extra = '';
+      if (status === 'sold') extra = ", sold_at=datetime('now')";
+      if (status === 'approved') {
+        // Reactivating: reset sold_at and lifecycle clock so 30-day window restarts
+        extra = ", sold_at=NULL, created_at=datetime('now'), reminded_at=NULL, final_warned_at=NULL";
+      }
+      db.prepare(`UPDATE listings SET status=?${extra} WHERE id=?`).run(status, req.params.id);
     }
     res.json({ success: true });
   } catch(err) { res.status(500).json({ error: err.message }); }
@@ -2434,3 +2442,97 @@ function scheduleNightlyBackup() {
   setTimeout(() => { runBackup(); setInterval(runBackup, 24 * 60 * 60 * 1000); }, msUntil);
 }
 scheduleNightlyBackup();
+
+// ─── Listing lifecycle: re-engagement nudges + auto-expire ─────────────────
+// Day 21 — first nudge: still available? option to lower price or mark sold
+// Day 28 — final warning: expires in 48h
+// Day 30 — auto-deactivate (status → 'expired'), seller can reactivate
+async function runListingLifecycle() {
+  try {
+    const now = Date.now();
+    const day21 = new Date(now - 21 * 24 * 60 * 60 * 1000).toISOString();
+    const day28 = new Date(now - 28 * 24 * 60 * 60 * 1000).toISOString();
+    const day30 = new Date(now - 30 * 24 * 60 * 60 * 1000).toISOString();
+
+    // Auto-expire: active listings older than 30 days with no final-warned reactivation
+    const toExpire = db.prepare(`
+      SELECT * FROM listings
+      WHERE status='approved'
+        AND created_at < ?
+        AND final_warned_at IS NOT NULL
+    `).all(day30);
+
+    for (const l of toExpire) {
+      db.prepare("UPDATE listings SET status='expired' WHERE id=?").run(l.id);
+      const price = (l.price / 100).toFixed(0);
+      await sendEmail(l.seller_email, `Your GoodKit listing expired: ${l.title}`, emailTemplate('Listing Expired', `
+        <p style="font-size:15px;color:#444;margin:0 0 16px;">Your listing for <strong>${l.title}</strong> ($${price}) was automatically deactivated after 30 days.</p>
+        <p style="font-size:15px;color:#444;margin:0 0 20px;">If it's still available, you can reactivate it anytime from your seller dashboard — it takes one click.</p>
+        <a href="https://good-kit.com/seller" style="display:inline-block;background:#1a7a3a;color:#fff;font-weight:700;padding:12px 28px;border-radius:8px;text-decoration:none;font-size:15px;">Reactivate Listing</a>
+      `));
+      console.log(`[lifecycle] expired listing ${l.id}: ${l.title}`);
+    }
+
+    // Day 28 final warning — only listings that already got day-21 nudge, not yet warned
+    const toWarn = db.prepare(`
+      SELECT * FROM listings
+      WHERE status='approved'
+        AND created_at < ?
+        AND reminded_at IS NOT NULL
+        AND final_warned_at IS NULL
+    `).all(day28);
+
+    for (const l of toWarn) {
+      db.prepare("UPDATE listings SET final_warned_at=? WHERE id=?").run(new Date().toISOString(), l.id);
+      const price = (l.price / 100).toFixed(0);
+      const portal = `https://good-kit.com/seller`;
+      await sendEmail(l.seller_email, `Your listing expires in 48 hours: ${l.title}`, emailTemplate('Listing Expires Soon ⏰', `
+        <p style="font-size:15px;color:#444;margin:0 0 8px;">Your listing for <strong>${l.title}</strong> will automatically deactivate in <strong>48 hours</strong>.</p>
+        <p style="font-size:15px;color:#444;margin:0 0 20px;">Tap below to keep it live, lower the price, or mark it sold.</p>
+        <div style="display:flex;flex-direction:column;gap:10px;max-width:300px;">
+          <a href="${portal}" style="display:block;background:#1a7a3a;color:#fff;font-weight:700;padding:12px 20px;border-radius:8px;text-decoration:none;font-size:15px;text-align:center;">Keep It Live</a>
+          <a href="${portal}" style="display:block;background:#f0f0f0;color:#333;font-weight:600;padding:12px 20px;border-radius:8px;text-decoration:none;font-size:15px;text-align:center;">Lower the Price</a>
+          <a href="${portal}" style="display:block;background:#fff;border:1px solid #ddd;color:#888;font-weight:500;padding:12px 20px;border-radius:8px;text-decoration:none;font-size:15px;text-align:center;">Mark as Sold</a>
+        </div>
+        <p style="font-size:12px;color:#aaa;margin:20px 0 0;">Listed at $${price} · ${l.category || 'Cycling gear'}</p>
+      `));
+      console.log(`[lifecycle] final warning sent for listing ${l.id}: ${l.title}`);
+    }
+
+    // Day 21 first nudge — active listings not yet reminded
+    const toNudge = db.prepare(`
+      SELECT * FROM listings
+      WHERE status='approved'
+        AND created_at < ?
+        AND reminded_at IS NULL
+    `).all(day21);
+
+    for (const l of toNudge) {
+      db.prepare("UPDATE listings SET reminded_at=? WHERE id=?").run(new Date().toISOString(), l.id);
+      const price = (l.price / 100).toFixed(0);
+      const portal = `https://good-kit.com/seller`;
+      await sendEmail(l.seller_email, `Still available? Your GoodKit listing: ${l.title}`, emailTemplate('Still Available?', `
+        <p style="font-size:15px;color:#444;margin:0 0 6px;">Your <strong>${l.title}</strong> has been listed for 3 weeks at <strong>$${price}</strong>.</p>
+        <p style="font-size:15px;color:#444;margin:0 0 20px;">Is it still available? A quick update keeps your listing active and helps buyers know what's current.</p>
+        <div style="display:flex;flex-direction:column;gap:10px;max-width:300px;">
+          <a href="${portal}" style="display:block;background:#1a7a3a;color:#fff;font-weight:700;padding:12px 20px;border-radius:8px;text-decoration:none;font-size:15px;text-align:center;">✓ Still Available</a>
+          <a href="${portal}" style="display:block;background:#f5f5f5;color:#333;font-weight:600;padding:12px 20px;border-radius:8px;text-decoration:none;font-size:15px;text-align:center;">💲 Lower the Price</a>
+          <a href="${portal}" style="display:block;background:#fff;border:1px solid #ddd;color:#888;font-weight:500;padding:12px 20px;border-radius:8px;text-decoration:none;font-size:15px;text-align:center;">✗ Mark as Sold</a>
+        </div>
+        <p style="font-size:12px;color:#aaa;margin:20px 0 0;">Listing auto-deactivates in 9 days if no action is taken.</p>
+      `));
+      console.log(`[lifecycle] day-21 nudge sent for listing ${l.id}: ${l.title}`);
+    }
+
+  } catch(err) { console.error('[lifecycle] error:', err.message); }
+}
+
+// Run once at startup (after 30s), then every 6 hours
+setTimeout(() => { runListingLifecycle(); setInterval(runListingLifecycle, 6 * 60 * 60 * 1000); }, 30000);
+
+// Allow admin to trigger manually
+app.post('/admin/listings/lifecycle', (req, res) => {
+  const key = req.headers['x-admin-key'] || req.query.key;
+  if (key !== process.env.ADMIN_KEY) return res.status(401).json({ error: 'Unauthorized' });
+  runListingLifecycle().then(() => res.json({ ok: true, message: 'Lifecycle run complete' }));
+});
