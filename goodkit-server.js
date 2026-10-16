@@ -423,6 +423,23 @@ db.exec(`
   `ALTER TABLE listings ADD COLUMN community_id TEXT DEFAULT NULL`,
   `ALTER TABLE communities ADD COLUMN featured_listing_ids TEXT DEFAULT '[]'`,
   `ALTER TABLE listings ADD COLUMN delivery_type TEXT DEFAULT 'ship'`,
+  // Stripe Connect on pro consign athletes
+  `ALTER TABLE pro_consign_athletes ADD COLUMN stripe_account_id TEXT DEFAULT NULL`,
+  `ALTER TABLE pro_consign_athletes ADD COLUMN stripe_status TEXT DEFAULT 'no_stripe'`,
+  // Stripe Connect on CCX teams
+  `ALTER TABLE ccx_teams ADD COLUMN stripe_account_id TEXT DEFAULT NULL`,
+  `ALTER TABLE ccx_teams ADD COLUMN stripe_status TEXT DEFAULT 'no_stripe'`,
+  // shop_accounts wallet columns (added in consign update — safe no-ops if already exist)
+  `ALTER TABLE shop_accounts ADD COLUMN shop_type TEXT DEFAULT 'shop'`,
+  `ALTER TABLE shop_accounts ADD COLUMN consign_mode INTEGER DEFAULT 0`,
+  `ALTER TABLE shop_accounts ADD COLUMN venmo TEXT DEFAULT NULL`,
+  `ALTER TABLE shop_accounts ADD COLUMN paypal TEXT DEFAULT NULL`,
+  `ALTER TABLE shop_accounts ADD COLUMN bank_routing TEXT DEFAULT NULL`,
+  `ALTER TABLE shop_accounts ADD COLUMN bank_account TEXT DEFAULT NULL`,
+  `ALTER TABLE shop_accounts ADD COLUMN wallet_balance INTEGER DEFAULT 0`,
+  `ALTER TABLE shop_accounts ADD COLUMN total_earned INTEGER DEFAULT 0`,
+  // Stripe status on shop_accounts
+  `ALTER TABLE shop_accounts ADD COLUMN stripe_status TEXT DEFAULT 'no_stripe'`,
 ].forEach(sql => { try { db.exec(sql); } catch(e) {} });
 
 // One-time: clear old DBP stripe_account_id values so sellers re-onboard with new GoodKit Stripe account
@@ -1282,6 +1299,20 @@ app.post('/webhook', async (req, res) => {
   let event;
   try { event = stripe.webhooks.constructEvent(req.body, sig, process.env.STRIPE_WEBHOOK_SECRET); }
   catch(err) { return res.status(400).send('Webhook error: ' + err.message); }
+
+  // Stripe Connect onboarding complete — flip stripe_status to stripe_active
+  if (event.type === 'account.updated') {
+    const acct = event.data.object;
+    if (acct.charges_enabled && acct.payouts_enabled) {
+      const stripeId = acct.id;
+      // Update whichever entity owns this Stripe account
+      db.prepare(`UPDATE shop_accounts SET stripe_status='stripe_active' WHERE stripe_account_id=?`).run(stripeId);
+      db.prepare(`UPDATE pro_consign_athletes SET stripe_status='stripe_active' WHERE stripe_account_id=?`).run(stripeId);
+      db.prepare(`UPDATE ccx_teams SET stripe_status='stripe_active' WHERE stripe_account_id=?`).run(stripeId);
+      console.log(`[stripe] account ${stripeId} fully onboarded → stripe_active`);
+    }
+    return res.json({ received: true });
+  }
 
   if (event.type === 'payment_intent.succeeded') {
     const pi        = event.data.object;
@@ -2479,6 +2510,92 @@ app.post('/admin/shops/:id/payout', (req, res) => {
   })();
   res.set('Access-Control-Allow-Origin', '*');
   res.json({ ok: true });
+});
+
+// ── STRIPE CONNECT INVITES ───────────────────────────────────────────────────
+// Shared helper — creates Stripe Connect account + sends onboarding link via email
+async function sendStripeInvite({ entityType, entityId, email, name }) {
+  // Create Stripe Express account
+  const account = await stripe.accounts.create({
+    type: 'express',
+    email,
+    capabilities: { transfers: { requested: true } },
+    metadata: { goodkit_entity_type: entityType, goodkit_entity_id: entityId }
+  });
+
+  // Generate onboarding link
+  const accountLink = await stripe.accountLinks.create({
+    account: account.id,
+    refresh_url: `${process.env.FRONTEND_URL || 'https://good-kit.com'}/stripe-refresh`,
+    return_url:  `${process.env.FRONTEND_URL || 'https://good-kit.com'}/stripe-complete`,
+    type: 'account_onboarding',
+  });
+
+  // Store account ID + pending status
+  if (entityType === 'shop') {
+    db.prepare(`UPDATE shop_accounts SET stripe_account_id=?, stripe_status='stripe_pending' WHERE id=?`).run(account.id, entityId);
+  } else if (entityType === 'athlete') {
+    db.prepare(`UPDATE pro_consign_athletes SET stripe_account_id=?, stripe_status='stripe_pending' WHERE id=?`).run(account.id, entityId);
+  } else if (entityType === 'ccx_team') {
+    db.prepare(`UPDATE ccx_teams SET stripe_account_id=?, stripe_status='stripe_pending' WHERE id=?`).run(account.id, entityId);
+  }
+
+  // Send onboarding email
+  await resend.emails.send({
+    from: 'GoodKit <noreply@good-kit.com>',
+    to: email,
+    subject: 'Set up your GoodKit payouts',
+    html: `
+      <div style="font-family:sans-serif;max-width:520px;margin:0 auto;">
+        <img src="https://good-kit.com/logo.png" alt="GoodKit" style="height:36px;margin-bottom:24px;">
+        <h2 style="margin:0 0 12px;">Hi ${name},</h2>
+        <p style="color:#444;line-height:1.6;">You've been set up as a seller on <strong>GoodKit</strong> — the marketplace for cycling gear. To receive direct deposits from your sales, complete your Stripe payout profile:</p>
+        <a href="${accountLink.url}" style="display:inline-block;margin:20px 0;padding:14px 28px;background:#E85D26;color:#fff;border-radius:8px;text-decoration:none;font-weight:700;font-size:15px;">Complete Payout Setup →</a>
+        <p style="color:#888;font-size:13px;">This link expires in 24 hours. Once complete, your sales proceeds will deposit directly to your bank account automatically.</p>
+        <p style="color:#888;font-size:13px;">Questions? Reply to this email or reach us at <a href="mailto:hello@good-kit.com">hello@good-kit.com</a></p>
+      </div>`
+  });
+
+  return account.id;
+}
+
+// POST /admin/shops/:id/stripe-invite
+app.post('/admin/shops/:id/stripe-invite', async (req, res) => {
+  const key = req.headers['x-admin-key'] || req.query.key;
+  if (key !== process.env.ADMIN_KEY) return res.status(401).json({ error: 'Unauthorized' });
+  const shop = db.prepare('SELECT * FROM shop_accounts WHERE id=?').get(req.params.id);
+  if (!shop) return res.status(404).json({ error: 'Shop not found' });
+  try {
+    const acctId = await sendStripeInvite({ entityType: 'shop', entityId: shop.id, email: shop.contact_email, name: shop.shop_name });
+    res.set('Access-Control-Allow-Origin', '*');
+    res.json({ ok: true, stripe_account_id: acctId });
+  } catch(e) { res.status(500).json({ error: e.message }); }
+});
+
+// POST /admin/pro-consign/athletes/:id/stripe-invite
+app.post('/admin/pro-consign/athletes/:id/stripe-invite', async (req, res) => {
+  const key = req.headers['x-admin-key'] || req.query.key;
+  if (key !== process.env.ADMIN_KEY) return res.status(401).json({ error: 'Unauthorized' });
+  const athlete = db.prepare('SELECT * FROM pro_consign_athletes WHERE id=?').get(req.params.id);
+  if (!athlete) return res.status(404).json({ error: 'Athlete not found' });
+  try {
+    const acctId = await sendStripeInvite({ entityType: 'athlete', entityId: athlete.id, email: athlete.email, name: athlete.name });
+    res.set('Access-Control-Allow-Origin', '*');
+    res.json({ ok: true, stripe_account_id: acctId });
+  } catch(e) { res.status(500).json({ error: e.message }); }
+});
+
+// POST /admin/ccx/:teamId/stripe-invite
+app.post('/admin/ccx/:teamId/stripe-invite', async (req, res) => {
+  const key = req.headers['x-admin-key'] || req.query.key;
+  if (key !== process.env.ADMIN_KEY) return res.status(401).json({ error: 'Unauthorized' });
+  const team = db.prepare('SELECT * FROM ccx_teams WHERE id=?').get(req.params.teamId);
+  if (!team) return res.status(404).json({ error: 'Team not found' });
+  try {
+    const acctId = await sendStripeInvite({ entityType: 'ccx_team', entityId: team.id, email: team.captain_email, name: team.team_name });
+    res.set('Access-Control-Allow-Origin', '*');
+    res.json({ ok: true, stripe_account_id: acctId });
+  } catch(e) { res.status(500).json({ error: e.message }); }
 });
 
 // ── PRO ATHLETE SHOPS ────────────────────────────────────────────────────────

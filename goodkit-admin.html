@@ -549,7 +549,8 @@ function renderBikeShops(shops) {
       <div style="display:flex;align-items:center;gap:14px;flex-wrap:wrap;">
         <div style="flex:1;min-width:0;">
           <div style="font-weight:700;font-size:13px;">🏪 ${s.shop_name} <span style="font-family:monospace;font-size:11px;color:var(--fg3);">/shop/${s.slug}</span>
-            ${isConsign ? `<span style="margin-left:6px;padding:2px 7px;background:#2563eb22;color:#60a5fa;border-radius:4px;font-size:10px;font-weight:700;">CONSIGN</span>` : ''}
+            ${isConsign ? `<span style="margin-left:4px;padding:2px 7px;background:#2563eb22;color:#60a5fa;border-radius:4px;font-size:10px;font-weight:700;">CONSIGN</span>` : ''}
+            ${stripeBadge(s.stripe_status)}
           </div>
           <div style="font-size:11px;color:var(--fg3);margin-top:2px;">${s.contact_name} · ${s.contact_email}</div>
           ${s.ship_city ? `<div style="font-size:11px;color:var(--fg3);">${s.ship_city}, ${s.ship_state||''}</div>` : ''}
@@ -567,6 +568,7 @@ function renderBikeShops(shops) {
             <span style="font-size:12px;color:var(--fg3);">${s.listing_count} listings · <strong style="color:var(--green);">${fmt(s.total_sold)}</strong> sold</span>
             <a href="${API_BASE.replace('api.','')}/shop/${s.slug}" target="_blank" style="padding:5px 10px;font-size:11px;font-weight:600;border:1px solid var(--border);border-radius:5px;background:var(--bg3);color:var(--fg);cursor:pointer;text-decoration:none;">Storefront ↗</a>
           `}
+          ${s.stripe_status !== 'stripe_active' ? `<button onclick="sendStripeInvite('shop','${s.id}','${s.shop_name.replace(/'/g,"\\'")}'')" style="padding:5px 12px;font-size:11px;font-weight:700;background:#2563eb;color:#fff;border:none;border-radius:5px;cursor:pointer;">Send Stripe Invite</button>` : ''}
           <button onclick="toggleShopConsignMode('${s.id}',${isConsign?0:1})" style="padding:5px 10px;font-size:11px;font-weight:600;border:1px solid var(--border);border-radius:5px;background:var(--bg3);color:var(--fg2);cursor:pointer;">${isConsign ? 'Switch to Self-Managed' : 'Switch to Consign'}</button>
         </div>
       </div>
@@ -801,6 +803,29 @@ async function loadConsignItems() {
   } catch(e) { toast('Could not load consign data', true); }
 }
 
+function stripeBadge(status) {
+  if (status === 'stripe_active')  return `<span style="padding:2px 7px;background:#16a34a22;color:#4ade80;border-radius:4px;font-size:10px;font-weight:700;">STRIPE ACTIVE</span>`;
+  if (status === 'stripe_pending') return `<span style="padding:2px 7px;background:#ca8a0422;color:#fbbf24;border-radius:4px;font-size:10px;font-weight:700;">STRIPE PENDING</span>`;
+  return `<span style="padding:2px 7px;background:#52525222;color:var(--fg3);border-radius:4px;font-size:10px;font-weight:700;">NO STRIPE</span>`;
+}
+
+async function sendStripeInvite(entityType, entityId, name) {
+  const endpoints = {
+    shop: `/admin/shops/${entityId}/stripe-invite`,
+    athlete: `/admin/pro-consign/athletes/${entityId}/stripe-invite`,
+    ccx_team: `/admin/ccx/${entityId}/stripe-invite`,
+  };
+  const url = endpoints[entityType];
+  if (!url) return;
+  try {
+    const r = await fetch(`${API_BASE}${url}`, { method:'POST', headers:{'x-admin-key':ADMIN_KEY,'Content-Type':'application/json'} });
+    if (!r.ok) throw new Error((await r.json()).error);
+    toast(`Stripe invite sent to ${name}`);
+    if (entityType === 'shop') loadBikeShops();
+    else if (entityType === 'athlete') loadConsignItems();
+  } catch(e) { toast(e.message, true); }
+}
+
 function renderConsignAthletes(athletes) {
   const el = $('paList');
   if (!athletes.length) {
@@ -810,19 +835,20 @@ function renderConsignAthletes(athletes) {
   el.innerHTML = athletes.map(a => `
     <div style="padding:14px 16px;border-bottom:1px solid var(--border);display:flex;align-items:center;gap:14px;flex-wrap:wrap;">
       <div style="flex:1;min-width:0;">
-        <div style="font-weight:700;font-size:13px;">${a.name}</div>
+        <div style="font-weight:700;font-size:13px;">${a.name} ${stripeBadge(a.stripe_status)}</div>
         <div style="font-size:11px;color:var(--fg3);margin-top:2px;">${a.email}${a.phone?' · '+a.phone:''}</div>
         <div style="font-size:11px;color:var(--fg3);margin-top:2px;">
           ${a.venmo?`Venmo: ${a.venmo}  `:''}${a.paypal?`PayPal: ${a.paypal}  `:''}${a.bank_account?`ACH on file  `:''}
         </div>
         ${a.notes?`<div style="font-size:11px;color:var(--fg3);font-style:italic;">${a.notes}</div>`:''}
       </div>
-      <div style="text-align:right;min-width:140px;">
-        <div style="font-size:18px;font-weight:800;color:var(--green);">${fmt(a.wallet_balance)}</div>
-        <div style="font-size:10px;color:var(--fg3);">wallet balance</div>
-        <div style="font-size:10px;color:var(--fg3);">total earned ${fmt(a.total_earned)}</div>
-        ${a.wallet_balance>0?`<button onclick="openPayoutModal('${a.id}','${a.name}',${a.wallet_balance},'${a.venmo||''}','${a.paypal||''}','${a.bank_account?'yes':''}')" style="margin-top:6px;padding:5px 12px;font-size:11px;font-weight:700;background:var(--accent);color:#fff;border:none;border-radius:5px;cursor:pointer;">Pay Out</button>`
-        :'<span style="font-size:11px;color:var(--fg3);display:block;margin-top:6px;">Balance $0.00</span>'}
+      <div style="text-align:right;min-width:160px;display:flex;flex-direction:column;align-items:flex-end;gap:6px;">
+        ${a.stripe_status !== 'stripe_active' ? `<button onclick="sendStripeInvite('athlete','${a.id}','${a.name.replace(/'/g,"\\'")}'')" style="padding:5px 12px;font-size:11px;font-weight:700;background:#2563eb;color:#fff;border:none;border-radius:5px;cursor:pointer;">Send Stripe Invite</button>` : ''}
+        <div>
+          <div style="font-size:18px;font-weight:800;color:var(--green);">${fmt(a.wallet_balance)}</div>
+          <div style="font-size:10px;color:var(--fg3);">wallet · ${fmt(a.total_earned)} earned</div>
+        </div>
+        ${a.wallet_balance>0?`<button onclick="openPayoutModal('${a.id}','${a.name}',${a.wallet_balance},'${a.venmo||''}','${a.paypal||''}','${a.bank_account?'yes':''}')" style="padding:5px 12px;font-size:11px;font-weight:700;background:var(--accent);color:#fff;border:none;border-radius:5px;cursor:pointer;">Pay Out</button>`:''}
       </div>
     </div>`).join('');
 }
