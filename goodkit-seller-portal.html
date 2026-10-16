@@ -672,6 +672,7 @@ function renderListings(listings){
       <div class="listing-price">$${Number(l.price).toFixed(0)}</div>
       <div class="listing-actions">
         <button class="btn btn-outline btn-xs" onclick="toggleEdit('${l.id}',${Number(l.price).toFixed(2)},'${(l.category||'').replace(/'/g,"\\'")}','${(l.size||'').replace(/'/g,"\\'")}')">Edit</button>
+        ${l.status==='approved'?`<button class="btn btn-outline btn-xs" onclick="openShareModal('${l.id}','${(l.title||'').replace(/'/g,"\\'")}',${Number(l.price).toFixed(2)},'${l.photos&&l.photos.length?l.photos[0]:''}','${(l.condition||'').replace(/'/g,"\\'")}')">Share</button>`:''}
         ${l.status==='approved'?`<button class="btn btn-warning btn-xs" onclick="markSoldElsewhere('${l.id}','${(l.title||'').replace(/'/g,"\\'")}')">Sold Elsewhere</button>`:''}
         <button class="btn btn-danger btn-xs" onclick="deleteListing('${l.id}','${(l.title||'').replace(/'/g,"\\'")}')">Delete</button>
       </div>
@@ -1179,6 +1180,177 @@ function showToast(msg,type=''){
   const t=document.getElementById('toast');
   t.textContent=msg;t.className='toast show'+(type?' '+type:'');
   setTimeout(()=>{t.className='toast';},3500);
+}
+
+// ── Share to Instagram modal ──────────────────────────────────────────────
+let shareModal = null;
+
+function openShareModal(id, title, price, photoPath, condition) {
+  const url = `https://good-kit.com/listing/${id}`;
+  const imgSrc = photoPath ? `${API}${photoPath}` : null;
+
+  // Build modal
+  const overlay = document.createElement('div');
+  overlay.id = 'share-overlay';
+  overlay.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,0.65);z-index:9999;display:flex;align-items:center;justify-content:center;padding:16px;';
+  overlay.innerHTML = `
+    <div style="background:var(--bg);border-radius:16px;width:100%;max-width:420px;overflow:hidden;box-shadow:0 20px 60px rgba(0,0,0,0.4);">
+      <div style="padding:16px 20px;border-bottom:1px solid var(--border);display:flex;align-items:center;justify-content:space-between;">
+        <div style="font-weight:800;font-size:15px;">Share to Instagram</div>
+        <button onclick="closeShareModal()" style="background:none;border:none;font-size:20px;cursor:pointer;color:var(--ink-soft);line-height:1;">×</button>
+      </div>
+      <div style="padding:20px;">
+        <canvas id="shareCanvas" width="540" height="960" style="width:100%;border-radius:10px;display:block;"></canvas>
+        <div style="margin-top:14px;display:flex;flex-direction:column;gap:8px;">
+          <button id="dlBtn" onclick="downloadShareCard()" style="padding:11px;background:var(--orange);color:#fff;border:none;border-radius:9px;font-weight:700;font-size:14px;cursor:pointer;letter-spacing:0.01em;">⬇ Download Story Card</button>
+          <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;">
+            <button onclick="copyShareLink('${url}')" style="padding:10px;background:var(--bg-subtle);border:1px solid var(--border);border-radius:9px;font-weight:600;font-size:13px;cursor:pointer;color:var(--ink);">🔗 Copy Link</button>
+            <a href="https://www.instagram.com/" target="_blank" style="padding:10px;background:#E1306C;color:#fff;border-radius:9px;font-weight:600;font-size:13px;cursor:pointer;text-align:center;text-decoration:none;display:block;">📸 Open Instagram</a>
+          </div>
+          <p style="font-size:11px;color:var(--ink-soft);text-align:center;margin:2px 0 0;">Download the card → open Instagram → add to your Story or post</p>
+        </div>
+      </div>
+    </div>`;
+  document.body.appendChild(overlay);
+  overlay.addEventListener('click', e => { if(e.target===overlay) closeShareModal(); });
+  shareModal = overlay;
+
+  // Draw the card once canvas is in DOM
+  requestAnimationFrame(() => drawShareCard(id, title, price, imgSrc, condition, url));
+}
+
+function closeShareModal() {
+  if (shareModal) { shareModal.remove(); shareModal = null; }
+}
+
+function drawShareCard(id, title, price, imgSrc, condition, url) {
+  const canvas = document.getElementById('shareCanvas');
+  if (!canvas) return;
+  const ctx = canvas.getContext('2d');
+  const W = 540, H = 960;
+
+  function draw(img) {
+    // Background
+    ctx.fillStyle = '#F9F7F4';
+    ctx.fillRect(0, 0, W, H);
+
+    // Photo area
+    if (img) {
+      const areaH = 600;
+      // Cover-fit into top area
+      const scale = Math.max(W / img.width, areaH / img.height);
+      const dw = img.width * scale, dh = img.height * scale;
+      const dx = (W - dw) / 2, dy = (areaH - dh) / 2;
+      ctx.save();
+      ctx.beginPath();
+      ctx.rect(0, 0, W, areaH);
+      ctx.clip();
+      ctx.drawImage(img, dx, dy, dw, dh);
+      ctx.restore();
+      // Gradient overlay on photo bottom
+      const grad = ctx.createLinearGradient(0, areaH - 120, 0, areaH);
+      grad.addColorStop(0, 'rgba(249,247,244,0)');
+      grad.addColorStop(1, 'rgba(249,247,244,1)');
+      ctx.fillStyle = grad;
+      ctx.fillRect(0, areaH - 120, W, 120);
+    }
+
+    // GoodKit wordmark top-left
+    ctx.fillStyle = '#FF5C1A';
+    ctx.font = '700 28px -apple-system, system-ui, sans-serif';
+    ctx.fillText('goodkit.', 28, 48);
+
+    // Verified badge
+    ctx.fillStyle = '#FF5C1A22';
+    roundRect(ctx, W - 140, 20, 116, 34, 17);
+    ctx.fill();
+    ctx.fillStyle = '#FF5C1A';
+    ctx.font = '600 13px system-ui';
+    ctx.fillText('✓ verified gear', W - 128, 42);
+
+    // Title
+    ctx.fillStyle = '#1A1A18';
+    ctx.font = '800 38px system-ui';
+    wrapText(ctx, title, 28, 670, W - 56, 48);
+
+    // Condition pill
+    ctx.fillStyle = '#E8E5E0';
+    roundRect(ctx, 28, 730, 110, 30, 15);
+    ctx.fill();
+    ctx.fillStyle = '#6B6B68';
+    ctx.font = '600 13px system-ui';
+    ctx.fillText(condition || 'Used', 50, 750);
+
+    // Price
+    ctx.fillStyle = '#FF5C1A';
+    ctx.font = '900 72px system-ui';
+    ctx.fillText(`$${Math.round(price)}`, 28, 840);
+
+    // URL
+    ctx.fillStyle = '#9B9B97';
+    ctx.font = '500 18px system-ui';
+    ctx.fillText(url.replace('https://', ''), 28, 920);
+
+    // Bottom bar
+    ctx.fillStyle = '#1A1A18';
+    ctx.fillRect(0, 940, W, 20);
+  }
+
+  if (imgSrc) {
+    const img = new Image();
+    img.crossOrigin = 'anonymous';
+    img.onload = () => draw(img);
+    img.onerror = () => draw(null);
+    img.src = imgSrc;
+  } else {
+    draw(null);
+  }
+}
+
+function roundRect(ctx, x, y, w, h, r) {
+  ctx.beginPath();
+  ctx.moveTo(x + r, y);
+  ctx.lineTo(x + w - r, y);
+  ctx.quadraticCurveTo(x + w, y, x + w, y + r);
+  ctx.lineTo(x + w, y + h - r);
+  ctx.quadraticCurveTo(x + w, y + h, x + w - r, y + h);
+  ctx.lineTo(x + r, y + h);
+  ctx.quadraticCurveTo(x, y + h, x, y + h - r);
+  ctx.lineTo(x, y + r);
+  ctx.quadraticCurveTo(x, y, x + r, y);
+  ctx.closePath();
+}
+
+function wrapText(ctx, text, x, y, maxW, lineH) {
+  const words = text.split(' ');
+  let line = '';
+  for (const word of words) {
+    const test = line ? line + ' ' + word : word;
+    if (ctx.measureText(test).width > maxW && line) {
+      ctx.fillText(line, x, y);
+      line = word;
+      y += lineH;
+    } else { line = test; }
+  }
+  ctx.fillText(line, x, y);
+}
+
+function downloadShareCard() {
+  const canvas = document.getElementById('shareCanvas');
+  if (!canvas) return;
+  const a = document.createElement('a');
+  a.download = 'goodkit-share.png';
+  a.href = canvas.toDataURL('image/png');
+  a.click();
+}
+
+function copyShareLink(url) {
+  navigator.clipboard.writeText(url).then(() => showToast('Link copied!','success')).catch(() => {
+    const el = document.createElement('input');
+    el.value = url; document.body.appendChild(el); el.select();
+    document.execCommand('copy'); el.remove();
+    showToast('Link copied!','success');
+  });
 }
 </script><script>if("serviceWorker"in navigator){navigator.serviceWorker.register("/sw.js");}</script>
 </body>
