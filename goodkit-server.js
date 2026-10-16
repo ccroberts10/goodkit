@@ -245,6 +245,13 @@ db.exec(`
   `ALTER TABLE shop_accounts ADD COLUMN total_earned INTEGER DEFAULT 0`,
 ].forEach(sql => { try { db.exec(sql); } catch(e) {} });
 
+// Shop consign discount migrations
+[
+  `ALTER TABLE shop_consign_items ADD COLUMN listed_at TEXT DEFAULT NULL`,
+  `ALTER TABLE shop_consign_items ADD COLUMN original_list_price INTEGER DEFAULT NULL`,
+  `ALTER TABLE listings ADD COLUMN consign_shop_id TEXT DEFAULT NULL`,
+].forEach(sql => { try { db.exec(sql); } catch(e) {} });
+
 // Shop consign tables
 db.exec(`
   CREATE TABLE IF NOT EXISTS shop_consign_items (
@@ -2496,9 +2503,20 @@ app.patch('/admin/shops/consign/:itemId', (req, res) => {
   if (key !== process.env.ADMIN_KEY) return res.status(401).json({ error: 'Unauthorized' });
   const item = db.prepare('SELECT * FROM shop_consign_items WHERE id=?').get(req.params.itemId);
   if (!item) return res.status(404).json({ error: 'Not found' });
-  const { status, sale_price, notes } = req.body;
+  const { status, sale_price, notes, listing_id, list_price } = req.body;
   const updates = []; const vals = [];
-  if (status) { updates.push('status=?'); vals.push(status); }
+  if (status) {
+    updates.push('status=?'); vals.push(status);
+    // When going live, stamp listed_at and record original price
+    if (status === 'listed' && !item.listed_at) {
+      updates.push('listed_at=?'); vals.push(new Date().toISOString());
+    }
+  }
+  if (listing_id !== undefined) { updates.push('listing_id=?'); vals.push(listing_id); }
+  if (list_price !== undefined && !item.original_list_price) {
+    const priceCents = Math.round(parseFloat(list_price) * 100);
+    updates.push('original_list_price=?'); vals.push(priceCents);
+  }
   if (notes !== undefined) { updates.push('notes=?'); vals.push(notes); }
   let shopPayout = null;
   if (sale_price !== undefined && !item.sale_price) {
@@ -2528,7 +2546,28 @@ app.get('/admin/shops/:id/consign', (req, res) => {
   const key = req.headers['x-admin-key'] || req.query.key;
   if (key !== process.env.ADMIN_KEY) return res.status(401).json({ error: 'Unauthorized' });
   const items = db.prepare(`SELECT * FROM shop_consign_items WHERE shop_id=? ORDER BY created_at DESC`).all(req.params.id)
-    .map(i => ({ ...i, sale_price: i.sale_price ? i.sale_price/100 : null, shop_payout: i.shop_payout ? i.shop_payout/100 : null, platform_cut: i.platform_cut ? i.platform_cut/100 : null }));
+    .map(i => {
+      // Compute time-based discount: starts at 60 days listed, 10% per 30 days, max 50%
+      let discount_pct = 0;
+      let discounted_price = null;
+      if (i.listed_at && i.original_list_price && i.status === 'listed') {
+        const daysSinceListed = (Date.now() - new Date(i.listed_at).getTime()) / (1000 * 60 * 60 * 24);
+        if (daysSinceListed >= 60) {
+          const monthsOver = Math.floor((daysSinceListed - 60) / 30) + 1;
+          discount_pct = Math.min(monthsOver * 10, 50);
+          discounted_price = Math.round(i.original_list_price * (1 - discount_pct / 100)) / 100;
+        }
+      }
+      return {
+        ...i,
+        sale_price: i.sale_price ? i.sale_price/100 : null,
+        shop_payout: i.shop_payout ? i.shop_payout/100 : null,
+        platform_cut: i.platform_cut ? i.platform_cut/100 : null,
+        original_list_price: i.original_list_price ? i.original_list_price/100 : null,
+        discount_pct,
+        discounted_price,
+      };
+    });
   res.set('Access-Control-Allow-Origin', '*');
   res.json({ items });
 });
@@ -3068,6 +3107,37 @@ app.use((err, req, res, next) => {
     error: status === 500 ? 'Internal server error' : (err.message || 'Error')
   });
 });
+
+// ── Nightly consign discount job ─────────────────────────────────────────────
+// Runs once on startup and every 24h. Applies time-based discounts to live
+// shop consign listings: 10% off per 30 days after 60 days listed, max 50%.
+function applyConsignDiscounts() {
+  const liveItems = db.prepare(`
+    SELECT * FROM shop_consign_items
+    WHERE status='listed' AND listed_at IS NOT NULL AND original_list_price IS NOT NULL AND listing_id IS NOT NULL
+  `).all();
+
+  let updated = 0;
+  for (const item of liveItems) {
+    const daysSinceListed = (Date.now() - new Date(item.listed_at).getTime()) / (1000 * 60 * 60 * 24);
+    if (daysSinceListed < 60) continue;
+    const monthsOver = Math.floor((daysSinceListed - 60) / 30) + 1;
+    const discountPct = Math.min(monthsOver * 10, 50);
+    const newPriceCents = Math.round(item.original_list_price * (1 - discountPct / 100));
+    const listing = db.prepare(`SELECT price FROM listings WHERE id=?`).get(item.listing_id);
+    if (!listing) continue;
+    if (listing.price !== newPriceCents) {
+      db.prepare(`UPDATE listings SET price=? WHERE id=?`).run(newPriceCents, item.listing_id);
+      updated++;
+      console.log(`[discount] ${item.item_description} → ${discountPct}% off ($${newPriceCents/100})`);
+    }
+  }
+  if (updated) console.log(`[discount] Applied discounts to ${updated} consign items`);
+}
+
+applyConsignDiscounts();
+setInterval(applyConsignDiscounts, 24 * 60 * 60 * 1000);
+// ─────────────────────────────────────────────────────────────────────────────
 
 app.listen(PORT, () => console.log(`GoodKit Marketplace running on port ${PORT}`));
 
