@@ -374,6 +374,7 @@ function calculateSplit(itemPriceCents, shippingCents, ccxCode, accountType) {
   shippingCents = shippingCents || 0;
   const isShop        = accountType === 'shop';
   const isProConsign  = accountType === 'pro_consign';
+  // pro_athlete: athlete lists own gear, same 85/15 as individual sellers
   const sellerPct     = isShop ? 65 : (isProConsign ? 75 : 85);
   const platformPct   = isShop ? 35 : (isProConsign ? 25 : 15);
   const totalCents    = itemPriceCents + shippingCents;
@@ -2333,7 +2334,7 @@ app.post('/admin/pro-athletes/create', (req, res) => {
   const sessionToken = uuidv4();
   db.prepare(`
     INSERT INTO seller_sessions (id, token, email, created_at, used, account_type, shop_slug)
-    VALUES (?, ?, ?, datetime('now'), 1, 'shop', ?)
+    VALUES (?, ?, ?, datetime('now'), 1, 'pro_athlete', ?)
   `).run(uuidv4(), sessionToken, contact_email, slug);
 
   const loginLink = `${SITE_URL}/seller?token=${sessionToken}`;
@@ -2348,7 +2349,7 @@ app.post('/admin/pro-athletes/create', (req, res) => {
         <p>Use this link to access your seller dashboard:</p>
         <p><a href="${loginLink}" style="font-size:1.1em;font-weight:bold">${loginLink}</a></p>
         <p>Your public storefront: <a href="${SITE_URL}/shop/${slug}">${SITE_URL}/shop/${slug}</a></p>
-        <p>As a verified pro, you keep <strong>65%</strong> of each sale. GoodKit handles payments, shipping labels, and buyer protection.</p>
+        <p>As a verified pro, you keep <strong>85%</strong> of each sale. GoodKit handles payments, shipping labels, and buyer protection.</p>
         <p>— The GoodKit Team</p>
       `)
     });
