@@ -2240,7 +2240,7 @@ app.get('/robots.txt', (req, res) => {
 // Fee structure: 65% seller / 35% platform (no CCX program for shops)
 
 // POST /admin/shops/create — create a shop seller account and send magic link
-app.post('/admin/shops/create', (req, res) => {
+app.post('/admin/shops/create', async (req, res) => {
   const key = req.headers['x-admin-key'] || req.query.key;
   if (key !== process.env.ADMIN_KEY) return res.status(401).json({ error: 'Unauthorized' });
 
@@ -2695,7 +2695,7 @@ app.post('/admin/ccx/:teamId/stripe-invite', async (req, res) => {
 // Public storefront lives at /shop/:slug (reuses same route).
 
 // POST /admin/pro-athletes/create — create a verified pro athlete shop
-app.post('/admin/pro-athletes/create', (req, res) => {
+app.post('/admin/pro-athletes/create', async (req, res) => {
   const key = req.headers['x-admin-key'] || req.query.key;
   if (key !== process.env.ADMIN_KEY) return res.status(401).json({ error: 'Unauthorized' });
 
