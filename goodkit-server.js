@@ -233,6 +233,30 @@ db.exec(`
   `ALTER TABLE listings ADD COLUMN account_type TEXT DEFAULT 'individual'`,
 ].forEach(sql => { try { db.exec(sql); } catch(e) {} });
 
+// Pro athlete / pro consignment migrations
+[
+  `ALTER TABLE shop_accounts ADD COLUMN shop_type TEXT DEFAULT 'shop'`,
+].forEach(sql => { try { db.exec(sql); } catch(e) {} });
+
+// Pro consignment items table — GoodKit posts gear dropped off by local pros
+db.exec(`
+  CREATE TABLE IF NOT EXISTS pro_consign_items (
+    id TEXT PRIMARY KEY,
+    athlete_name TEXT NOT NULL,
+    athlete_email TEXT NOT NULL,
+    athlete_phone TEXT,
+    item_description TEXT NOT NULL,
+    listing_id TEXT,
+    sale_price INTEGER,
+    athlete_payout INTEGER,
+    platform_cut INTEGER,
+    status TEXT DEFAULT 'pending',
+    notes TEXT,
+    created_at TEXT DEFAULT (datetime('now')),
+    paid_at TEXT DEFAULT NULL
+  );
+`);
+
 // Shop accounts table
 db.exec(`
   CREATE TABLE IF NOT EXISTS shop_accounts (
@@ -340,20 +364,22 @@ function getLabelTier(weightOz) {
 }
 
 // ── FEE STRUCTURE ────────────────────────────────────────────────────────────
-// Two-tier model:
-//   Individual sellers: 85% seller / 15% GoodKit (13% platform + 2% CCX if applicable)
-//   Shop consignment:   65% seller / 35% GoodKit (shops offloading stale inventory)
+// Three-tier model:
+//   Individual sellers:  85% seller / 15% GoodKit (13% platform + 2% CCX if applicable)
+//   Shop / pro athlete:  65% seller / 35% GoodKit
+//   Pro consign (drop-off): 75% athlete / 25% GoodKit (GoodKit posts, athlete drops off)
 // Shipping passes through at cost (flat tier price charged to buyer).
 // Stripe fee (~2.9% + $0.30) comes out of GoodKit's platform share.
 function calculateSplit(itemPriceCents, shippingCents, ccxCode, accountType) {
   shippingCents = shippingCents || 0;
   const isShop        = accountType === 'shop';
-  const sellerPct     = isShop ? 65 : 85;
-  const platformPct   = isShop ? 35 : 15;
+  const isProConsign  = accountType === 'pro_consign';
+  const sellerPct     = isShop ? 65 : (isProConsign ? 75 : 85);
+  const platformPct   = isShop ? 35 : (isProConsign ? 25 : 15);
   const totalCents    = itemPriceCents + shippingCents;
   const stripeFee     = Math.round(totalCents * 0.029 + 30);
   const platformFee   = Math.round(itemPriceCents * (platformPct / 100));
-  const ccxFund       = (!isShop && ccxCode) ? Math.round(itemPriceCents * 0.02) : 0; // 2% CCX, individual only
+  const ccxFund       = (!isShop && !isProConsign && ccxCode) ? Math.round(itemPriceCents * 0.02) : 0; // 2% CCX, individual only
   const goodkitNet    = platformFee - ccxFund;
   const sellerNet     = itemPriceCents - platformFee + shippingCents;
   const platformNet   = Math.max(goodkitNet - stripeFee, 0);
@@ -2270,6 +2296,159 @@ app.options('/admin/shops*', (req, res) => {
   res.set('Access-Control-Allow-Methods', 'GET,POST,OPTIONS');
   res.set('Access-Control-Allow-Headers', 'Content-Type,x-admin-key');
   res.sendStatus(204);
+});
+
+// ── PRO ATHLETE SHOPS ────────────────────────────────────────────────────────
+// Same mechanics as team stores (shop_accounts + seller_sessions with account_type='shop')
+// but shop_type='pro_athlete'. Fee: 65% athlete / 35% GoodKit (same as shops).
+// Public storefront lives at /shop/:slug (reuses same route).
+
+// POST /admin/pro-athletes/create — create a verified pro athlete shop
+app.post('/admin/pro-athletes/create', (req, res) => {
+  const key = req.headers['x-admin-key'] || req.query.key;
+  if (key !== process.env.ADMIN_KEY) return res.status(401).json({ error: 'Unauthorized' });
+
+  const { athlete_name, slug, contact_name, contact_email,
+          ship_name, ship_street1, ship_city, ship_state, ship_zip, ship_phone } = req.body;
+
+  if (!athlete_name || !slug || !contact_name || !contact_email) {
+    return res.status(400).json({ error: 'athlete_name, slug, contact_name, contact_email required' });
+  }
+  if (!/^[a-z0-9-]+$/.test(slug)) {
+    return res.status(400).json({ error: 'slug must be lowercase letters, numbers, and hyphens only' });
+  }
+
+  const existing = db.prepare('SELECT id FROM shop_accounts WHERE slug = ?').get(slug);
+  if (existing) return res.status(409).json({ error: 'Slug already taken' });
+
+  const shopId = uuidv4();
+  db.prepare(`
+    INSERT INTO shop_accounts (id, shop_name, slug, contact_name, contact_email,
+      ship_name, ship_street1, ship_city, ship_state, ship_zip, ship_phone, shop_type)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'pro_athlete')
+  `).run(shopId, athlete_name, slug, contact_name, contact_email,
+    ship_name || null, ship_street1 || null, ship_city || null,
+    ship_state || null, ship_zip || null, ship_phone || null);
+
+  const sessionToken = uuidv4();
+  db.prepare(`
+    INSERT INTO seller_sessions (id, token, email, created_at, used, account_type, shop_slug)
+    VALUES (?, ?, ?, datetime('now'), 1, 'shop', ?)
+  `).run(uuidv4(), sessionToken, contact_email, slug);
+
+  const loginLink = `${SITE_URL}/seller?token=${sessionToken}`;
+
+  try {
+    resend.emails.send({
+      from: 'GoodKit <no-reply@good-kit.com>',
+      to: contact_email,
+      subject: `Welcome to GoodKit — ${athlete_name} Verified Pro Shop`,
+      html: emailTemplate(`Welcome, ${contact_name}! 🚴`, `
+        <p>Your <strong>Verified Pro Athlete Shop</strong> — <strong>${athlete_name}</strong> — is live on GoodKit.</p>
+        <p>Use this link to access your seller dashboard:</p>
+        <p><a href="${loginLink}" style="font-size:1.1em;font-weight:bold">${loginLink}</a></p>
+        <p>Your public storefront: <a href="${SITE_URL}/shop/${slug}">${SITE_URL}/shop/${slug}</a></p>
+        <p>As a verified pro, you keep <strong>65%</strong> of each sale. GoodKit handles payments, shipping labels, and buyer protection.</p>
+        <p>— The GoodKit Team</p>
+      `)
+    });
+  } catch(e) { console.error('[pro-athletes/create] email failed:', e.message); }
+
+  res.json({ ok: true, shop_id: shopId, slug, storefront: `${SITE_URL}/shop/${slug}`, login_link: loginLink });
+});
+
+// GET /admin/pro-athletes — list all pro athlete shops
+app.get('/admin/pro-athletes', (req, res) => {
+  const key = req.headers['x-admin-key'] || req.query.key;
+  if (key !== process.env.ADMIN_KEY) return res.status(401).json({ error: 'Unauthorized' });
+
+  const athletes = db.prepare(`
+    SELECT sa.*, COUNT(l.id) as listing_count,
+           COALESCE(SUM(CASE WHEN s.status IN ('paid_out','delivered') THEN s.amount ELSE 0 END) / 100.0, 0) as total_sold
+    FROM shop_accounts sa
+    LEFT JOIN seller_sessions ss ON ss.shop_slug = sa.slug AND ss.account_type = 'shop'
+    LEFT JOIN listings l ON l.seller_email = ss.email
+    LEFT JOIN sales s ON s.listing_id = l.id
+    WHERE sa.shop_type = 'pro_athlete'
+    GROUP BY sa.id
+    ORDER BY sa.created_at DESC
+  `).all();
+
+  res.set('Access-Control-Allow-Origin', '*');
+  res.json({ athletes });
+});
+
+// ── PRO CONSIGNMENT (DROP-OFF) ───────────────────────────────────────────────
+// Local pro athletes drop off gear; GoodKit photographs, lists, ships.
+// Fee: 75% athlete / 25% GoodKit. No Stripe account needed for athlete.
+// Admin creates the listing under GoodKit's own seller account.
+
+// POST /admin/pro-consign/items — log a new drop-off item
+app.post('/admin/pro-consign/items', (req, res) => {
+  const key = req.headers['x-admin-key'] || req.query.key;
+  if (key !== process.env.ADMIN_KEY) return res.status(401).json({ error: 'Unauthorized' });
+
+  const { athlete_name, athlete_email, athlete_phone, item_description, notes } = req.body;
+  if (!athlete_name || !athlete_email || !item_description) {
+    return res.status(400).json({ error: 'athlete_name, athlete_email, item_description required' });
+  }
+
+  const id = uuidv4();
+  db.prepare(`
+    INSERT INTO pro_consign_items (id, athlete_name, athlete_email, athlete_phone, item_description, notes)
+    VALUES (?, ?, ?, ?, ?, ?)
+  `).run(id, athlete_name, athlete_email, athlete_phone || null, item_description, notes || null);
+
+  res.json({ ok: true, consign_id: id });
+});
+
+// PATCH /admin/pro-consign/items/:id — update status, link listing, record sale/payout
+app.patch('/admin/pro-consign/items/:id', (req, res) => {
+  const key = req.headers['x-admin-key'] || req.query.key;
+  if (key !== process.env.ADMIN_KEY) return res.status(401).json({ error: 'Unauthorized' });
+
+  const item = db.prepare('SELECT * FROM pro_consign_items WHERE id=?').get(req.params.id);
+  if (!item) return res.status(404).json({ error: 'Not found' });
+
+  const { status, listing_id, sale_price, notes } = req.body;
+  const updates = [];
+  const vals = [];
+
+  if (status) { updates.push('status=?'); vals.push(status); }
+  if (listing_id) { updates.push('listing_id=?'); vals.push(listing_id); }
+  if (notes !== undefined) { updates.push('notes=?'); vals.push(notes); }
+  if (sale_price !== undefined) {
+    const saleCents = Math.round(parseFloat(sale_price) * 100);
+    const athletePayout = Math.round(saleCents * 0.75);
+    const platformCut   = saleCents - athletePayout;
+    updates.push('sale_price=?', 'athlete_payout=?', 'platform_cut=?');
+    vals.push(saleCents, athletePayout, platformCut);
+  }
+  if (status === 'paid_out') { updates.push("paid_at=datetime('now')"); }
+
+  if (!updates.length) return res.status(400).json({ error: 'Nothing to update' });
+
+  vals.push(req.params.id);
+  db.prepare(`UPDATE pro_consign_items SET ${updates.join(',')} WHERE id=?`).run(...vals);
+  res.json({ ok: true });
+});
+
+// GET /admin/pro-consign/items — list all consignment items
+app.get('/admin/pro-consign/items', (req, res) => {
+  const key = req.headers['x-admin-key'] || req.query.key;
+  if (key !== process.env.ADMIN_KEY) return res.status(401).json({ error: 'Unauthorized' });
+
+  const items = db.prepare(`
+    SELECT * FROM pro_consign_items ORDER BY created_at DESC
+  `).all().map(i => ({
+    ...i,
+    sale_price:      i.sale_price      ? i.sale_price / 100      : null,
+    athlete_payout:  i.athlete_payout  ? i.athlete_payout / 100  : null,
+    platform_cut:    i.platform_cut    ? i.platform_cut / 100     : null,
+  }));
+
+  res.set('Access-Control-Allow-Origin', '*');
+  res.json({ items });
 });
 
 // ── COMMUNITY ROUTES ──────────────────────────────────────────────────────────

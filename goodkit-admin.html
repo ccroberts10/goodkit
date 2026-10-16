@@ -129,6 +129,8 @@
     <div class="nav-item" onclick="nav('sales')" id="nav-sales"><span class="nav-icon">💳</span> Sales</div>
     <div class="nav-item" onclick="nav('listings')" id="nav-listings"><span class="nav-icon">📦</span> Listings</div>
     <div class="nav-item" onclick="nav('communities')" id="nav-communities"><span class="nav-icon">🏔</span> Communities</div>
+    <div class="nav-item" onclick="nav('pro-athletes')" id="nav-pro-athletes"><span class="nav-icon">🏆</span> Pro Athletes</div>
+    <div class="nav-item" onclick="nav('pro-consign')" id="nav-pro-consign"><span class="nav-icon">📬</span> Pro Consign</div>
     <div style="flex:1;"></div>
     <div class="nav-item" onclick="refresh()" style="color:var(--fg3);font-size:12px;"><span class="nav-icon">↻</span> Refresh</div>
     <div class="nav-item" onclick="logout()" style="color:var(--fg3);font-size:12px;"><span class="nav-icon">→</span> Sign out</div>
@@ -174,6 +176,64 @@
       <div class="table-wrap">
         <div class="table-head">Active & recent listings</div>
         <div id="listingsTable"></div>
+      </div>
+    </div>
+
+    <!-- PRO ATHLETES -->
+    <div class="section" id="section-pro-athletes">
+      <div class="section-title">Pro Athlete Shops</div>
+
+      <!-- Create form -->
+      <div class="table-wrap" style="padding:16px 20px 20px;">
+        <div class="table-head" style="padding:0 0 12px;border-bottom:none;font-size:13px;font-weight:700;">Add verified pro athlete shop</div>
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;">
+          <div><label style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:0.07em;color:var(--fg2);display:block;margin-bottom:4px;">Athlete / Shop Name *</label>
+            <input id="pa-name" placeholder="Jane Doe Racing" style="width:100%;padding:8px 10px;background:var(--bg3);border:1px solid var(--border);border-radius:6px;color:var(--fg);font-size:13px;outline:none;"></div>
+          <div><label style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:0.07em;color:var(--fg2);display:block;margin-bottom:4px;">URL Slug *</label>
+            <input id="pa-slug" placeholder="jane-doe-racing" style="width:100%;padding:8px 10px;background:var(--bg3);border:1px solid var(--border);border-radius:6px;color:var(--fg);font-size:13px;outline:none;font-family:monospace;" oninput="this.value=this.value.toLowerCase().replace(/[^a-z0-9-]/g,'')"></div>
+          <div><label style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:0.07em;color:var(--fg2);display:block;margin-bottom:4px;">Contact Name *</label>
+            <input id="pa-contact" placeholder="Jane Doe" style="width:100%;padding:8px 10px;background:var(--bg3);border:1px solid var(--border);border-radius:6px;color:var(--fg);font-size:13px;outline:none;"></div>
+          <div><label style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:0.07em;color:var(--fg2);display:block;margin-bottom:4px;">Email *</label>
+            <input id="pa-email" type="email" placeholder="jane@example.com" style="width:100%;padding:8px 10px;background:var(--bg3);border:1px solid var(--border);border-radius:6px;color:var(--fg);font-size:13px;outline:none;"></div>
+        </div>
+        <div style="font-size:11px;color:var(--fg3);margin-top:10px;">Rate: 65% athlete / 35% GoodKit · Same as team stores · Athlete gets Stripe-connected seller portal</div>
+        <button onclick="createProAthlete()" style="margin-top:12px;padding:9px 20px;background:var(--accent);color:#fff;border:none;border-radius:7px;font-size:13px;font-weight:700;cursor:pointer;">Create Pro Shop →</button>
+      </div>
+
+      <!-- List -->
+      <div class="table-wrap">
+        <div class="table-head">All pro athlete shops <span id="paCount" style="font-weight:400;color:var(--fg3);"></span></div>
+        <div id="paList" style="padding:0 0 4px;"></div>
+      </div>
+    </div>
+
+    <!-- PRO CONSIGNMENT -->
+    <div class="section" id="section-pro-consign">
+      <div class="section-title">Pro Consignment (Drop-off)</div>
+
+      <!-- Log new drop-off -->
+      <div class="table-wrap" style="padding:16px 20px 20px;">
+        <div class="table-head" style="padding:0 0 12px;border-bottom:none;font-size:13px;font-weight:700;">Log new drop-off item</div>
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;">
+          <div><label style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:0.07em;color:var(--fg2);display:block;margin-bottom:4px;">Athlete Name *</label>
+            <input id="pc-name" placeholder="Sam Hill" style="width:100%;padding:8px 10px;background:var(--bg3);border:1px solid var(--border);border-radius:6px;color:var(--fg);font-size:13px;outline:none;"></div>
+          <div><label style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:0.07em;color:var(--fg2);display:block;margin-bottom:4px;">Athlete Email *</label>
+            <input id="pc-email" type="email" placeholder="sam@example.com" style="width:100%;padding:8px 10px;background:var(--bg3);border:1px solid var(--border);border-radius:6px;color:var(--fg);font-size:13px;outline:none;"></div>
+          <div><label style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:0.07em;color:var(--fg2);display:block;margin-bottom:4px;">Phone</label>
+            <input id="pc-phone" placeholder="970-555-0100" style="width:100%;padding:8px 10px;background:var(--bg3);border:1px solid var(--border);border-radius:6px;color:var(--fg);font-size:13px;outline:none;"></div>
+          <div><label style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:0.07em;color:var(--fg2);display:block;margin-bottom:4px;">Item Description *</label>
+            <input id="pc-item" placeholder="2023 Trek Emonda SL, 54cm, red" style="width:100%;padding:8px 10px;background:var(--bg3);border:1px solid var(--border);border-radius:6px;color:var(--fg);font-size:13px;outline:none;"></div>
+          <div style="grid-column:1/-1;"><label style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:0.07em;color:var(--fg2);display:block;margin-bottom:4px;">Notes</label>
+            <input id="pc-notes" placeholder="Condition notes, agreed asking price, etc." style="width:100%;padding:8px 10px;background:var(--bg3);border:1px solid var(--border);border-radius:6px;color:var(--fg);font-size:13px;outline:none;"></div>
+        </div>
+        <div style="font-size:11px;color:var(--fg3);margin-top:10px;">Rate: 75% athlete / 25% GoodKit · GoodKit photographs, lists, and ships · Payout manually after sale</div>
+        <button onclick="logConsignItem()" style="margin-top:12px;padding:9px 20px;background:var(--accent);color:#fff;border:none;border-radius:7px;font-size:13px;font-weight:700;cursor:pointer;">Log Drop-off →</button>
+      </div>
+
+      <!-- List -->
+      <div class="table-wrap">
+        <div class="table-head">All consignment items <span id="pcCount" style="font-weight:400;color:var(--fg3);"></span></div>
+        <div id="pcList" style="padding:0 0 4px;"></div>
       </div>
     </div>
 
@@ -280,6 +340,8 @@ function nav(id) {
   $('section-' + id).classList.add('active');
   $('nav-' + id).classList.add('active');
   if (id === 'communities') loadCommunities();
+  if (id === 'pro-athletes') loadProAthletes();
+  if (id === 'pro-consign') loadConsignItems();
 }
 
 function render() {
@@ -391,6 +453,147 @@ async function addMember(communityId) {
     if (!r.ok) throw new Error('Error');
     toast(`${email} added`);
     emailEl.value = '';
+  } catch(e) { toast(e.message, true); }
+}
+
+// ── Pro Athlete Shops ─────────────────────────────────────────────────────
+async function loadProAthletes() {
+  try {
+    const r = await fetch(`${API_BASE}/admin/pro-athletes`, { headers: { 'x-admin-key': ADMIN_KEY } });
+    const d = await r.json();
+    $('paCount').textContent = `— ${d.athletes.length}`;
+    renderProAthletes(d.athletes);
+  } catch(e) { toast('Could not load pro athletes', true); }
+}
+
+function renderProAthletes(athletes) {
+  const el = $('paList');
+  if (!athletes.length) {
+    el.innerHTML = `<div style="padding:20px;color:var(--fg3);font-size:13px;">No pro athlete shops yet.</div>`;
+    return;
+  }
+  el.innerHTML = athletes.map(a => `
+    <div style="padding:14px 16px;border-bottom:1px solid var(--border);display:flex;align-items:center;gap:14px;flex-wrap:wrap;">
+      <div style="flex:1;min-width:0;">
+        <div style="font-weight:700;font-size:13px;">🏆 ${a.shop_name} <span style="font-family:monospace;font-size:11px;color:var(--fg3);">/shop/${a.slug}</span></div>
+        <div style="font-size:11px;color:var(--fg3);margin-top:2px;">${a.contact_name} · ${a.contact_email}</div>
+      </div>
+      <div style="display:flex;gap:10px;align-items:center;font-size:12px;font-variant-numeric:tabular-nums;">
+        <span style="color:var(--fg3);">${a.listing_count} listings</span>
+        <span style="font-weight:700;color:var(--green);">${fmt(a.total_sold)} sold</span>
+        <a href="${API_BASE.replace('api.','')}/shop/${a.slug}" target="_blank" style="padding:5px 10px;font-size:11px;font-weight:600;border:1px solid var(--border);border-radius:5px;background:var(--bg3);color:var(--fg);cursor:pointer;text-decoration:none;">Storefront ↗</a>
+      </div>
+    </div>`).join('');
+}
+
+async function createProAthlete() {
+  const name    = $('pa-name').value.trim();
+  const slug    = $('pa-slug').value.trim();
+  const contact = $('pa-contact').value.trim();
+  const email   = $('pa-email').value.trim();
+  if (!name || !slug || !contact || !email) { toast('All fields required', true); return; }
+  try {
+    const r = await fetch(`${API_BASE}/admin/pro-athletes/create`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'x-admin-key': ADMIN_KEY },
+      body: JSON.stringify({ athlete_name: name, slug, contact_name: contact, contact_email: email })
+    });
+    const d = await r.json();
+    if (!r.ok) throw new Error(d.error || 'Error');
+    toast(`Pro shop created — login link sent to ${email}`);
+    ['pa-name','pa-slug','pa-contact','pa-email'].forEach(id => $(id).value='');
+    loadProAthletes();
+  } catch(e) { toast(e.message, true); }
+}
+
+// ── Pro Consignment ───────────────────────────────────────────────────────
+async function loadConsignItems() {
+  try {
+    const r = await fetch(`${API_BASE}/admin/pro-consign/items`, { headers: { 'x-admin-key': ADMIN_KEY } });
+    const d = await r.json();
+    $('pcCount').textContent = `— ${d.items.length}`;
+    renderConsignItems(d.items);
+  } catch(e) { toast('Could not load consign items', true); }
+}
+
+function renderConsignItems(items) {
+  const el = $('pcList');
+  if (!items.length) {
+    el.innerHTML = `<div style="padding:20px;color:var(--fg3);font-size:13px;">No drop-off items yet.</div>`;
+    return;
+  }
+  const statusColor = { pending:'gray', listed:'blue', sold:'green', paid_out:'green' };
+  el.innerHTML = items.map(i => `
+    <div style="padding:14px 16px;border-bottom:1px solid var(--border);display:flex;align-items:flex-start;gap:14px;flex-wrap:wrap;">
+      <div style="flex:1;min-width:0;">
+        <div style="font-weight:700;font-size:13px;">${i.item_description}</div>
+        <div style="font-size:11px;color:var(--fg3);margin-top:2px;">
+          ${i.athlete_name} · ${i.athlete_email}${i.athlete_phone?' · '+i.athlete_phone:''}
+        </div>
+        ${i.notes?`<div style="font-size:11px;color:var(--fg3);margin-top:2px;font-style:italic;">${i.notes}</div>`:''}
+        ${i.sale_price?`<div style="font-size:12px;margin-top:4px;">Sale: <strong>${fmt(i.sale_price)}</strong> → Athlete: <strong style="color:var(--green);">${fmt(i.athlete_payout)}</strong> · GoodKit: ${fmt(i.platform_cut)}</div>`:''}
+        ${i.listing_id?`<div style="font-size:11px;color:var(--fg3);margin-top:2px;">Listing ID: <span style="font-family:monospace;">${i.listing_id}</span></div>`:''}
+      </div>
+      <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;">
+        <span class="badge badge-${statusColor[i.status]||'gray'}">${i.status}</span>
+        ${i.status!=='paid_out'?`
+        <input id="sp-${i.id}" placeholder="Sale price $" style="width:100px;padding:5px 8px;background:var(--bg3);border:1px solid var(--border);border-radius:5px;color:var(--fg);font-size:12px;outline:none;" type="number" min="1" step="0.01" ${i.sale_price?`value="${i.sale_price}"`:''}>
+        <button onclick="markConsignSold('${i.id}')" style="padding:5px 10px;font-size:11px;font-weight:600;background:var(--accent);color:#fff;border:none;border-radius:5px;cursor:pointer;">Mark Sold</button>
+        <button onclick="markConsignPaid('${i.id}')" style="padding:5px 10px;font-size:11px;font-weight:600;border:1px solid var(--green);border-radius:5px;background:transparent;color:var(--green);cursor:pointer;">Mark Paid Out</button>
+        `:'<span style="font-size:11px;color:var(--fg3);">Paid ${fmtDate(i.paid_at)}</span>'}
+      </div>
+    </div>`).join('');
+}
+
+async function logConsignItem() {
+  const name  = $('pc-name').value.trim();
+  const email = $('pc-email').value.trim();
+  const item  = $('pc-item').value.trim();
+  if (!name || !email || !item) { toast('Name, email, item required', true); return; }
+  try {
+    const r = await fetch(`${API_BASE}/admin/pro-consign/items`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'x-admin-key': ADMIN_KEY },
+      body: JSON.stringify({
+        athlete_name: name, athlete_email: email,
+        athlete_phone: $('pc-phone').value.trim(),
+        item_description: item,
+        notes: $('pc-notes').value.trim()
+      })
+    });
+    const d = await r.json();
+    if (!r.ok) throw new Error(d.error || 'Error');
+    toast('Drop-off logged!');
+    ['pc-name','pc-email','pc-phone','pc-item','pc-notes'].forEach(id => $(id).value='');
+    loadConsignItems();
+  } catch(e) { toast(e.message, true); }
+}
+
+async function markConsignSold(id) {
+  const sp = document.getElementById(`sp-${id}`)?.value;
+  if (!sp || parseFloat(sp) < 1) { toast('Enter sale price first', true); return; }
+  try {
+    const r = await fetch(`${API_BASE}/admin/pro-consign/items/${id}`, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json', 'x-admin-key': ADMIN_KEY },
+      body: JSON.stringify({ status: 'sold', sale_price: parseFloat(sp) })
+    });
+    if (!r.ok) throw new Error((await r.json()).error);
+    toast('Marked sold');
+    loadConsignItems();
+  } catch(e) { toast(e.message, true); }
+}
+
+async function markConsignPaid(id) {
+  try {
+    const r = await fetch(`${API_BASE}/admin/pro-consign/items/${id}`, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json', 'x-admin-key': ADMIN_KEY },
+      body: JSON.stringify({ status: 'paid_out' })
+    });
+    if (!r.ok) throw new Error((await r.json()).error);
+    toast('Payout recorded');
+    loadConsignItems();
   } catch(e) { toast(e.message, true); }
 }
 
