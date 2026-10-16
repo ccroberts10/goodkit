@@ -547,14 +547,18 @@ function renderBikeShops(shops) {
     return `
     <div style="padding:14px 16px;border-bottom:1px solid var(--border);">
       <div style="display:flex;align-items:center;gap:14px;flex-wrap:wrap;">
-        <div style="flex:1;min-width:0;">
-          <div style="font-weight:700;font-size:13px;">🏪 ${s.shop_name} <span style="font-family:monospace;font-size:11px;color:var(--fg3);">/shop/${s.slug}</span>
-            ${isConsign ? `<span style="margin-left:4px;padding:2px 7px;background:#2563eb22;color:#60a5fa;border-radius:4px;font-size:10px;font-weight:700;">CONSIGN</span>` : ''}
-            ${stripeBadge(s.stripe_status)}
+        <div style="flex:1;min-width:0;display:flex;gap:12px;align-items:flex-start;">
+          ${s.logo_url ? `<img src="${s.logo_url}" style="width:44px;height:44px;border-radius:8px;object-fit:contain;background:var(--bg3);border:1px solid var(--border);flex-shrink:0;">` : `<div onclick="uploadLogo('shop','${s.id}','${s.shop_name.replace(/'/g,"\\'")}'')" title="Upload logo" style="width:44px;height:44px;border-radius:8px;border:2px dashed var(--border);display:flex;align-items:center;justify-content:center;font-size:18px;cursor:pointer;flex-shrink:0;color:var(--fg3);">🖼</div>`}
+          <div style="min-width:0;">
+            <div style="font-weight:700;font-size:13px;">🏪 ${s.shop_name} <span style="font-family:monospace;font-size:11px;color:var(--fg3);">/shop/${s.slug}</span>
+              ${isConsign ? `<span style="margin-left:4px;padding:2px 7px;background:#2563eb22;color:#60a5fa;border-radius:4px;font-size:10px;font-weight:700;">CONSIGN</span>` : ''}
+              ${stripeBadge(s.stripe_status)}
+            </div>
+            <div style="font-size:11px;color:var(--fg3);margin-top:2px;">${s.contact_name} · ${s.contact_email}</div>
+            ${s.ship_city ? `<div style="font-size:11px;color:var(--fg3);">${s.ship_city}, ${s.ship_state||''}</div>` : ''}
+            ${s.venmo||s.paypal ? `<div style="font-size:11px;color:var(--fg3);margin-top:2px;">${s.venmo?'Venmo: '+s.venmo+'  ':''}${s.paypal?'PayPal: '+s.paypal:''}</div>` : ''}
+            ${s.logo_url ? `<button onclick="uploadLogo('shop','${s.id}','${s.shop_name.replace(/'/g,"\\'")}'')" style="margin-top:4px;padding:2px 8px;font-size:10px;border:1px solid var(--border);border-radius:4px;background:transparent;color:var(--fg3);cursor:pointer;">Replace Logo</button>` : ''}
           </div>
-          <div style="font-size:11px;color:var(--fg3);margin-top:2px;">${s.contact_name} · ${s.contact_email}</div>
-          ${s.ship_city ? `<div style="font-size:11px;color:var(--fg3);">${s.ship_city}, ${s.ship_state||''}</div>` : ''}
-          ${s.venmo||s.paypal ? `<div style="font-size:11px;color:var(--fg3);margin-top:2px;">${s.venmo?'Venmo: '+s.venmo+'  ':''}${s.paypal?'PayPal: '+s.paypal:''}</div>` : ''}
         </div>
         <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;">
           ${isConsign ? `
@@ -809,6 +813,26 @@ function stripeBadge(status) {
   return `<span style="padding:2px 7px;background:#52525222;color:var(--fg3);border-radius:4px;font-size:10px;font-weight:700;">NO STRIPE</span>`;
 }
 
+async function uploadLogo(entityType, entityId, name) {
+  const input = document.createElement('input');
+  input.type = 'file';
+  input.accept = 'image/png,image/svg+xml,image/jpeg,image/webp';
+  input.onchange = async () => {
+    const file = input.files[0];
+    if (!file) return;
+    const form = new FormData();
+    form.append('logo', file);
+    try {
+      const r = await fetch(`${API_BASE}/admin/logo-upload?entity=${entityType}&id=${entityId}&key=${ADMIN_KEY}`, { method:'POST', body: form });
+      if (!r.ok) throw new Error((await r.json()).error);
+      toast(`Logo uploaded for ${name}`);
+      if (entityType === 'shop') loadBikeShops();
+      else if (entityType === 'athlete') loadConsignItems();
+    } catch(e) { toast(e.message, true); }
+  };
+  input.click();
+}
+
 async function sendStripeInvite(entityType, entityId, name) {
   const endpoints = {
     shop: `/admin/shops/${entityId}/stripe-invite`,
@@ -834,13 +858,17 @@ function renderConsignAthletes(athletes) {
   }
   el.innerHTML = athletes.map(a => `
     <div style="padding:14px 16px;border-bottom:1px solid var(--border);display:flex;align-items:center;gap:14px;flex-wrap:wrap;">
-      <div style="flex:1;min-width:0;">
-        <div style="font-weight:700;font-size:13px;">${a.name} ${stripeBadge(a.stripe_status)}</div>
-        <div style="font-size:11px;color:var(--fg3);margin-top:2px;">${a.email}${a.phone?' · '+a.phone:''}</div>
-        <div style="font-size:11px;color:var(--fg3);margin-top:2px;">
-          ${a.venmo?`Venmo: ${a.venmo}  `:''}${a.paypal?`PayPal: ${a.paypal}  `:''}${a.bank_account?`ACH on file  `:''}
+      <div style="flex:1;min-width:0;display:flex;gap:12px;align-items:flex-start;">
+        ${a.logo_url ? `<img src="${a.logo_url}" style="width:44px;height:44px;border-radius:8px;object-fit:contain;background:var(--bg3);border:1px solid var(--border);flex-shrink:0;">` : `<div onclick="uploadLogo('athlete','${a.id}','${a.name.replace(/'/g,"\\'")}'')" title="Upload logo" style="width:44px;height:44px;border-radius:8px;border:2px dashed var(--border);display:flex;align-items:center;justify-content:center;font-size:18px;cursor:pointer;flex-shrink:0;color:var(--fg3);">🖼</div>`}
+        <div style="min-width:0;">
+          <div style="font-weight:700;font-size:13px;">${a.name} ${stripeBadge(a.stripe_status)}</div>
+          <div style="font-size:11px;color:var(--fg3);margin-top:2px;">${a.email}${a.phone?' · '+a.phone:''}</div>
+          <div style="font-size:11px;color:var(--fg3);margin-top:2px;">
+            ${a.venmo?`Venmo: ${a.venmo}  `:''}${a.paypal?`PayPal: ${a.paypal}  `:''}${a.bank_account?`ACH on file  `:''}
+          </div>
+          ${a.notes?`<div style="font-size:11px;color:var(--fg3);font-style:italic;">${a.notes}</div>`:''}
+          ${a.logo_url ? `<button onclick="uploadLogo('athlete','${a.id}','${a.name.replace(/'/g,"\\'")}'')" style="margin-top:4px;padding:2px 8px;font-size:10px;border:1px solid var(--border);border-radius:4px;background:transparent;color:var(--fg3);cursor:pointer;">Replace Logo</button>` : ''}
         </div>
-        ${a.notes?`<div style="font-size:11px;color:var(--fg3);font-style:italic;">${a.notes}</div>`:''}
       </div>
       <div style="text-align:right;min-width:160px;display:flex;flex-direction:column;align-items:flex-end;gap:6px;">
         ${a.stripe_status !== 'stripe_active' ? `<button onclick="sendStripeInvite('athlete','${a.id}','${a.name.replace(/'/g,"\\'")}'')" style="padding:5px 12px;font-size:11px;font-weight:700;background:#2563eb;color:#fff;border:none;border-radius:5px;cursor:pointer;">Send Stripe Invite</button>` : ''}

@@ -426,9 +426,13 @@ db.exec(`
   // Stripe Connect on pro consign athletes
   `ALTER TABLE pro_consign_athletes ADD COLUMN stripe_account_id TEXT DEFAULT NULL`,
   `ALTER TABLE pro_consign_athletes ADD COLUMN stripe_status TEXT DEFAULT 'no_stripe'`,
+  `ALTER TABLE pro_consign_athletes ADD COLUMN logo_url TEXT DEFAULT NULL`,
   // Stripe Connect on CCX teams
   `ALTER TABLE ccx_teams ADD COLUMN stripe_account_id TEXT DEFAULT NULL`,
   `ALTER TABLE ccx_teams ADD COLUMN stripe_status TEXT DEFAULT 'no_stripe'`,
+  `ALTER TABLE ccx_teams ADD COLUMN logo_url TEXT DEFAULT NULL`,
+  // Logo on shop_accounts (covers shops + pro athlete shops)
+  `ALTER TABLE shop_accounts ADD COLUMN logo_url TEXT DEFAULT NULL`,
   // shop_accounts wallet columns (added in consign update — safe no-ops if already exist)
   `ALTER TABLE shop_accounts ADD COLUMN shop_type TEXT DEFAULT 'shop'`,
   `ALTER TABLE shop_accounts ADD COLUMN consign_mode INTEGER DEFAULT 0`,
@@ -586,6 +590,58 @@ function emailTemplate(title, body) {
       </p>
     </div>
   </div>`;
+}
+
+// ── PARTNER WELCOME EMAIL ─────────────────────────────────────────────────────
+// Sent to shops, pro athletes, pro consign athletes, and CCX teams on creation.
+// entityType: 'shop' | 'pro_athlete' | 'consign_athlete' | 'ccx_team'
+async function sendPartnerWelcome({ to, recipientName, entityName, entityType, loginLink, artworkUploadUrl }) {
+  const typeLabels = {
+    shop:             { label: 'Bike Shop Partner', fee: '65% of each sale' },
+    pro_athlete:      { label: 'Verified Pro Athlete Shop', fee: '85% of each sale' },
+    consign_athlete:  { label: 'Pro Consignment Partner', fee: '75% of each sale' },
+    ccx_team:         { label: 'CCX Team Partner', fee: '85% seller keeps · 2% to your team fund · 13% GoodKit' },
+  };
+  const { label, fee } = typeLabels[entityType] || { label: 'Partner', fee: '' };
+
+  await sendEmail(to, `Welcome to GoodKit — ${entityName}`, emailTemplate(`Welcome to the team, ${recipientName}! 🚴`, `
+    <p style="font-size:15px;color:#1A1A14;line-height:1.8;margin:0 0 20px;">
+      You're now a <strong>${label}</strong> on <strong>GoodKit</strong> — the marketplace built for cyclists, by cyclists.
+    </p>
+
+    <div style="background:#E8E0D0;padding:18px 22px;margin-bottom:20px;border-left:4px solid #FF5C1A;">
+      <p style="font-size:11px;letter-spacing:0.15em;text-transform:uppercase;color:#888;margin:0 0 4px;">Your payout</p>
+      <p style="font-size:16px;font-weight:700;color:#1A1A14;margin:0;">${fee}</p>
+    </div>
+
+    <p style="font-size:14px;color:#555;line-height:1.8;margin:0 0 16px;">
+      <strong>What GoodKit is:</strong> A national marketplace for quality used cycling gear — bikes, components, apparel, accessories. We vet sellers, handle payments securely, generate shipping labels, and protect buyers — so the community can buy and sell with real confidence.
+    </p>
+
+    <p style="font-size:14px;color:#555;line-height:1.8;margin:0 0 16px;">
+      <strong>Our mission:</strong> 2% of every transaction goes back to causes our users care about — cycling clubs, teams, trail advocacy groups, and programs that grow the sport. That 2% always comes out of our cut, never yours.
+    </p>
+
+    ${loginLink ? `
+    <p style="font-size:14px;color:#555;margin:0 0 8px;"><strong>Your seller dashboard:</strong></p>
+    <a href="${loginLink}" style="display:inline-block;background:#FF5C1A;color:white;padding:12px 24px;font-size:14px;font-weight:600;text-decoration:none;margin-bottom:24px;">Access Your Dashboard →</a>
+    ` : ''}
+
+    <div style="background:#FFF8F5;border:2px dashed #FF5C1A;padding:18px 22px;margin-bottom:20px;">
+      <p style="font-size:13px;font-weight:700;color:#FF5C1A;margin:0 0 8px;">📸 One thing we need from you</p>
+      <p style="font-size:13px;color:#555;line-height:1.7;margin:0 0 12px;">
+        Send us your <strong>logo or badge artwork</strong> — a PNG or SVG works great. We'll display it on your profile page and badge so buyers know exactly who they're buying from. This builds real trust with your community.
+      </p>
+      <p style="font-size:13px;color:#555;margin:0;">
+        Just reply to this email with your artwork attached, or send it to <a href="mailto:hello@good-kit.com" style="color:#FF5C1A;">hello@good-kit.com</a> with your team/shop name in the subject line.
+      </p>
+    </div>
+
+    <p style="font-size:13px;color:#888;line-height:1.7;margin:0;">
+      Questions? Reply here anytime. We're a small team and we read every message.<br>
+      — Casey &amp; Sam, GoodKit
+    </p>
+  `));
 }
 
 // ── LISTING ALERTS ───────────────────────────────────────────────────────────
@@ -1519,17 +1575,16 @@ app.post('/ccx/register', async (req, res) => {
     db.prepare(`INSERT INTO ccx_teams (id, team_name, school, code, captain_name, captain_email, payout_email)
                 VALUES (?, ?, ?, ?, ?, ?, ?)`).run(id, team_name, school, code, captain_name, captain_email, payout_email || captain_email);
 
-    // Send welcome email with team code
-    await sendEmail(captain_email, `Your GoodKit CCX team code: ${code}`, emailTemplate('Welcome to GoodKit CCX 🚴',
-      `<p style="font-size:15px;color:#1A1A14;margin:0 0 16px;">Hi ${captain_name}, your team is registered!</p>
+    // Send partner welcome + team code block
+    await sendPartnerWelcome({ to: captain_email, recipientName: captain_name, entityName: `${school} ${team_name}`, entityType: 'ccx_team', loginLink: `${BASE_URL}/ccx/dashboard?team=${id}` });
+    // Also send a plain code email so they always have the code handy
+    await sendEmail(captain_email, `Your GoodKit CCX team code: ${code}`, emailTemplate('Your Team Code 🚴',
+      `<p style="font-size:15px;color:#1A1A14;margin:0 0 16px;">Hi ${captain_name}, here's your team code to share with teammates:</p>
        <div style="background:#E8E0D0;padding:20px 24px;margin-bottom:20px;">
          <p style="font-size:11px;letter-spacing:0.15em;text-transform:uppercase;color:#888;margin:0 0 4px;">${school} · ${team_name}</p>
-         <p style="font-size:13px;color:#888;margin:0 0 8px;">Your CCX team code</p>
          <p style="font-size:40px;font-weight:900;color:#FF5C1A;letter-spacing:0.1em;margin:0;">${code}</p>
        </div>
-       <p style="font-size:13px;color:#555;line-height:1.7;margin:0 0 16px;">Share this code with your teammates. When they list gear on GoodKit and enter <strong>${code}</strong>, 2% of every sale automatically flows into your team fund.</p>
-       <p style="font-size:13px;color:#555;margin:0 0 20px;"><strong>How it works:</strong> Seller keeps 85% · 2% to team fund · 13% GoodKit fee</p>
-       <a href="${BASE_URL}/ccx/dashboard?team=${id}" style="display:inline-block;background:#FF5C1A;color:white;padding:14px 28px;font-size:14px;font-weight:600;text-decoration:none;">View Team Dashboard →</a>`
+       <p style="font-size:13px;color:#555;line-height:1.7;margin:0;">When teammates list gear and enter <strong>${code}</strong>, 2% of every sale flows into your team fund automatically — out of GoodKit's cut, not theirs.</p>`
     ));
 
     await sendEmail(NOTIFY_EMAIL, `[GoodKit CCX] New team: ${school} ${team_name}`, `Code: ${code}\nCaptain: ${captain_name} <${captain_email}>`);
@@ -2223,24 +2278,11 @@ app.post('/admin/shops/create', (req, res) => {
 
   const loginLink = `${SITE_URL}/seller?token=${sessionToken}`;
 
-  // Send magic link email
+  // Send welcome email
   try {
-    resend.emails.send({
-      from: 'GoodKit <no-reply@good-kit.com>',
-      to: contact_email,
-      subject: `Welcome to GoodKit — ${shop_name} seller portal`,
-      html: `
-        <h2>Welcome to GoodKit, ${contact_name}!</h2>
-        <p>Your shop <strong>${shop_name}</strong> has been set up on GoodKit.</p>
-        <p>Use this link to access your seller dashboard and track your sales:</p>
-        <p><a href="${loginLink}" style="font-size:1.1em;font-weight:bold">${loginLink}</a></p>
-        <p>Your public storefront: <a href="${SITE_URL}/shop/${slug}">${SITE_URL}/shop/${slug}</a></p>
-        <p>As a consignment shop, you'll receive <strong>65%</strong> of each sale price.</p>
-        <p>— The GoodKit Team</p>
-      `
-    });
+    await sendPartnerWelcome({ to: contact_email, recipientName: contact_name, entityName: shop_name, entityType: 'shop', loginLink });
   } catch(e) {
-    console.error('[shop/create] email failed:', e.message);
+    console.error('[shop/create] welcome email failed:', e.message);
   }
 
   res.json({
@@ -2559,6 +2601,55 @@ async function sendStripeInvite({ entityType, entityId, email, name }) {
   return account.id;
 }
 
+// ── PARTNER LOGO UPLOAD ───────────────────────────────────────────────────────
+// POST /admin/logo-upload?entity=shop|athlete|ccx_team&id=<id>
+// Accepts multipart/form-data with field "logo"
+app.post('/admin/logo-upload', adminAuth, multer({ storage: multer.memoryStorage(), limits: { fileSize: 5 * 1024 * 1024 } }).single('logo'), async (req, res) => {
+  const { entity, id } = req.query;
+  if (!entity || !id) return res.status(400).json({ error: 'entity and id required' });
+  if (!req.file) return res.status(400).json({ error: 'No file uploaded' });
+
+  const ext  = path.extname(req.file.originalname).toLowerCase() || '.png';
+  const key  = `logos/${entity}/${id}${ext}`;
+  let logoUrl;
+
+  try {
+    // Upload to S3 if configured, otherwise save locally
+    if (process.env.AWS_BUCKET) {
+      const s3 = new S3Client({ region: process.env.AWS_REGION || 'us-east-2' });
+      await s3.send(new PutObjectCommand({
+        Bucket: process.env.AWS_BUCKET,
+        Key: key,
+        Body: req.file.buffer,
+        ContentType: req.file.mimetype,
+        ACL: 'public-read'
+      }));
+      logoUrl = `https://${process.env.AWS_BUCKET}.s3.amazonaws.com/${key}`;
+    } else {
+      // Local fallback — save to /uploads/logos/
+      const dir = path.join(__dirname, 'uploads', 'logos', entity);
+      fs.mkdirSync(dir, { recursive: true });
+      fs.writeFileSync(path.join(dir, `${id}${ext}`), req.file.buffer);
+      logoUrl = `/uploads/logos/${entity}/${id}${ext}`;
+    }
+
+    if (entity === 'shop')            db.prepare(`UPDATE shop_accounts SET logo_url=? WHERE id=?`).run(logoUrl, id);
+    else if (entity === 'athlete')    db.prepare(`UPDATE pro_consign_athletes SET logo_url=? WHERE id=?`).run(logoUrl, id);
+    else if (entity === 'ccx_team')   db.prepare(`UPDATE ccx_teams SET logo_url=? WHERE id=?`).run(logoUrl, id);
+    else return res.status(400).json({ error: 'Unknown entity type' });
+
+    res.set('Access-Control-Allow-Origin', '*');
+    res.json({ ok: true, logo_url: logoUrl });
+  } catch(e) { res.status(500).json({ error: e.message }); }
+});
+
+// Middleware shorthand used above
+function adminAuth(req, res, next) {
+  const key = req.headers['x-admin-key'] || req.query.key;
+  if (key !== process.env.ADMIN_KEY) return res.status(401).json({ error: 'Unauthorized' });
+  next();
+}
+
 // POST /admin/shops/:id/stripe-invite
 app.post('/admin/shops/:id/stripe-invite', async (req, res) => {
   const key = req.headers['x-admin-key'] || req.query.key;
@@ -2639,20 +2730,8 @@ app.post('/admin/pro-athletes/create', (req, res) => {
   const loginLink = `${SITE_URL}/seller?token=${sessionToken}`;
 
   try {
-    resend.emails.send({
-      from: 'GoodKit <no-reply@good-kit.com>',
-      to: contact_email,
-      subject: `Welcome to GoodKit — ${athlete_name} Verified Pro Shop`,
-      html: emailTemplate(`Welcome, ${contact_name}! 🚴`, `
-        <p>Your <strong>Verified Pro Athlete Shop</strong> — <strong>${athlete_name}</strong> — is live on GoodKit.</p>
-        <p>Use this link to access your seller dashboard:</p>
-        <p><a href="${loginLink}" style="font-size:1.1em;font-weight:bold">${loginLink}</a></p>
-        <p>Your public storefront: <a href="${SITE_URL}/shop/${slug}">${SITE_URL}/shop/${slug}</a></p>
-        <p>As a verified pro, you keep <strong>85%</strong> of each sale. GoodKit handles payments, shipping labels, and buyer protection.</p>
-        <p>— The GoodKit Team</p>
-      `)
-    });
-  } catch(e) { console.error('[pro-athletes/create] email failed:', e.message); }
+    await sendPartnerWelcome({ to: contact_email, recipientName: contact_name, entityName: athlete_name, entityType: 'pro_athlete', loginLink });
+  } catch(e) { console.error('[pro-athletes/create] welcome email failed:', e.message); }
 
   res.json({ ok: true, shop_id: shopId, slug, storefront: `${SITE_URL}/shop/${slug}`, login_link: loginLink });
 });
@@ -2779,6 +2858,9 @@ app.post('/admin/pro-consign/athletes', (req, res) => {
       VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)
     `).run(id, name, email, phone||null, address||null, city||null, state||null, zip||null, venmo||null, paypal||null, bank_routing||null, bank_account||null, notes||null);
     res.json({ ok: true, athlete_id: id });
+    // Fire welcome email after responding (non-blocking)
+    sendPartnerWelcome({ to: email, recipientName: name, entityName: name, entityType: 'consign_athlete', loginLink: null })
+      .catch(e => console.error('[pro-consign/athletes] welcome email failed:', e.message));
   } catch(e) {
     if (e.message.includes('UNIQUE')) return res.status(400).json({ error: 'Athlete with that email already exists' });
     throw e;
