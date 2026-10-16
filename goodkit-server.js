@@ -233,15 +233,100 @@ db.exec(`
   `ALTER TABLE listings ADD COLUMN account_type TEXT DEFAULT 'individual'`,
 ].forEach(sql => { try { db.exec(sql); } catch(e) {} });
 
-// Pro athlete / pro consignment migrations
+// Pro athlete / pro consignment / shop wallet migrations
 [
   `ALTER TABLE shop_accounts ADD COLUMN shop_type TEXT DEFAULT 'shop'`,
+  `ALTER TABLE shop_accounts ADD COLUMN consign_mode INTEGER DEFAULT 0`,
+  `ALTER TABLE shop_accounts ADD COLUMN venmo TEXT DEFAULT NULL`,
+  `ALTER TABLE shop_accounts ADD COLUMN paypal TEXT DEFAULT NULL`,
+  `ALTER TABLE shop_accounts ADD COLUMN bank_routing TEXT DEFAULT NULL`,
+  `ALTER TABLE shop_accounts ADD COLUMN bank_account TEXT DEFAULT NULL`,
+  `ALTER TABLE shop_accounts ADD COLUMN wallet_balance INTEGER DEFAULT 0`,
+  `ALTER TABLE shop_accounts ADD COLUMN total_earned INTEGER DEFAULT 0`,
 ].forEach(sql => { try { db.exec(sql); } catch(e) {} });
+
+// Shop consign tables
+db.exec(`
+  CREATE TABLE IF NOT EXISTS shop_consign_items (
+    id TEXT PRIMARY KEY,
+    shop_id TEXT NOT NULL,
+    item_description TEXT NOT NULL,
+    listing_id TEXT,
+    sale_price INTEGER,
+    shop_payout INTEGER,
+    platform_cut INTEGER,
+    status TEXT DEFAULT 'pending',
+    notes TEXT,
+    created_at TEXT DEFAULT (datetime('now'))
+  );
+  CREATE TABLE IF NOT EXISTS shop_wallet_events (
+    id TEXT PRIMARY KEY,
+    shop_id TEXT NOT NULL,
+    item_id TEXT,
+    amount INTEGER NOT NULL,
+    type TEXT NOT NULL,
+    description TEXT,
+    created_at TEXT DEFAULT (datetime('now'))
+  );
+  CREATE TABLE IF NOT EXISTS shop_payouts (
+    id TEXT PRIMARY KEY,
+    shop_id TEXT NOT NULL,
+    amount INTEGER NOT NULL,
+    method TEXT NOT NULL,
+    method_detail TEXT,
+    notes TEXT,
+    status TEXT DEFAULT 'paid',
+    paid_at TEXT DEFAULT (datetime('now'))
+  );
+`);
+
+// Pro consignment athlete profiles + wallet
+db.exec(`
+  CREATE TABLE IF NOT EXISTS pro_consign_athletes (
+    id TEXT PRIMARY KEY,
+    name TEXT NOT NULL,
+    email TEXT NOT NULL UNIQUE,
+    phone TEXT,
+    address TEXT,
+    city TEXT,
+    state TEXT,
+    zip TEXT,
+    venmo TEXT,
+    paypal TEXT,
+    bank_routing TEXT,
+    bank_account TEXT,
+    wallet_balance INTEGER DEFAULT 0,
+    total_earned INTEGER DEFAULT 0,
+    notes TEXT,
+    status TEXT DEFAULT 'active',
+    created_at TEXT DEFAULT (datetime('now'))
+  );
+  CREATE TABLE IF NOT EXISTS pro_consign_wallet_events (
+    id TEXT PRIMARY KEY,
+    athlete_id TEXT NOT NULL,
+    item_id TEXT,
+    amount INTEGER NOT NULL,
+    type TEXT NOT NULL,
+    description TEXT,
+    created_at TEXT DEFAULT (datetime('now'))
+  );
+  CREATE TABLE IF NOT EXISTS pro_consign_payouts (
+    id TEXT PRIMARY KEY,
+    athlete_id TEXT NOT NULL,
+    amount INTEGER NOT NULL,
+    method TEXT NOT NULL,
+    method_detail TEXT,
+    notes TEXT,
+    status TEXT DEFAULT 'paid',
+    paid_at TEXT DEFAULT (datetime('now'))
+  );
+`);
 
 // Pro consignment items table — GoodKit posts gear dropped off by local pros
 db.exec(`
   CREATE TABLE IF NOT EXISTS pro_consign_items (
     id TEXT PRIMARY KEY,
+    athlete_id TEXT,
     athlete_name TEXT NOT NULL,
     athlete_email TEXT NOT NULL,
     athlete_phone TEXT,
@@ -256,6 +341,10 @@ db.exec(`
     paid_at TEXT DEFAULT NULL
   );
 `);
+
+// Add athlete_id to existing pro_consign_items if missing
+[`ALTER TABLE pro_consign_items ADD COLUMN athlete_id TEXT DEFAULT NULL`]
+  .forEach(sql => { try { db.exec(sql); } catch(e) {} });
 
 // Shop accounts table
 db.exec(`
@@ -2294,9 +2383,102 @@ app.get('/shop/:slug', (req, res) => {
 // Admin CORS preflight for /admin/shops
 app.options('/admin/shops*', (req, res) => {
   res.set('Access-Control-Allow-Origin', '*');
-  res.set('Access-Control-Allow-Methods', 'GET,POST,OPTIONS');
+  res.set('Access-Control-Allow-Methods', 'GET,POST,PATCH,OPTIONS');
   res.set('Access-Control-Allow-Headers', 'Content-Type,x-admin-key');
   res.sendStatus(204);
+});
+
+// PATCH /admin/shops/:id — update shop fields (consign_mode, payment info, etc.)
+app.patch('/admin/shops/:id', (req, res) => {
+  const key = req.headers['x-admin-key'] || req.query.key;
+  if (key !== process.env.ADMIN_KEY) return res.status(401).json({ error: 'Unauthorized' });
+  const allowed = ['consign_mode','venmo','paypal','bank_routing','bank_account','status'];
+  const updates = []; const vals = [];
+  allowed.forEach(f => { if (req.body[f] !== undefined) { updates.push(`${f}=?`); vals.push(req.body[f]); } });
+  if (!updates.length) return res.status(400).json({ error: 'Nothing to update' });
+  vals.push(req.params.id);
+  db.prepare(`UPDATE shop_accounts SET ${updates.join(',')} WHERE id=?`).run(...vals);
+  res.set('Access-Control-Allow-Origin', '*');
+  res.json({ ok: true });
+});
+
+// POST /admin/shops/:id/consign — log a consign drop-off item for a shop
+app.post('/admin/shops/:id/consign', (req, res) => {
+  const key = req.headers['x-admin-key'] || req.query.key;
+  if (key !== process.env.ADMIN_KEY) return res.status(401).json({ error: 'Unauthorized' });
+  const shop = db.prepare('SELECT * FROM shop_accounts WHERE id=?').get(req.params.id);
+  if (!shop) return res.status(404).json({ error: 'Shop not found' });
+  const { item_description, notes } = req.body;
+  if (!item_description) return res.status(400).json({ error: 'item_description required' });
+  const id = uuidv4();
+  db.prepare(`INSERT INTO shop_consign_items (id, shop_id, item_description, notes) VALUES (?,?,?,?)`)
+    .run(id, req.params.id, item_description, notes || null);
+  res.set('Access-Control-Allow-Origin', '*');
+  res.json({ ok: true, item_id: id });
+});
+
+// PATCH /admin/shops/consign/:itemId — mark sold, auto-credit wallet
+app.patch('/admin/shops/consign/:itemId', (req, res) => {
+  const key = req.headers['x-admin-key'] || req.query.key;
+  if (key !== process.env.ADMIN_KEY) return res.status(401).json({ error: 'Unauthorized' });
+  const item = db.prepare('SELECT * FROM shop_consign_items WHERE id=?').get(req.params.itemId);
+  if (!item) return res.status(404).json({ error: 'Not found' });
+  const { status, sale_price, notes } = req.body;
+  const updates = []; const vals = [];
+  if (status) { updates.push('status=?'); vals.push(status); }
+  if (notes !== undefined) { updates.push('notes=?'); vals.push(notes); }
+  let shopPayout = null;
+  if (sale_price !== undefined && !item.sale_price) {
+    const saleCents  = Math.round(parseFloat(sale_price) * 100);
+    shopPayout       = Math.round(saleCents * 0.65);
+    const platCut    = saleCents - shopPayout;
+    updates.push('sale_price=?','shop_payout=?','platform_cut=?');
+    vals.push(saleCents, shopPayout, platCut);
+  }
+  if (!updates.length) return res.status(400).json({ error: 'Nothing to update' });
+  vals.push(req.params.itemId);
+  db.transaction(() => {
+    db.prepare(`UPDATE shop_consign_items SET ${updates.join(',')} WHERE id=?`).run(...vals);
+    if (shopPayout) {
+      db.prepare(`INSERT INTO shop_wallet_events (id, shop_id, item_id, amount, type, description) VALUES (?,?,?,?,?,?)`)
+        .run(uuidv4(), item.shop_id, item.id, shopPayout, 'sale', `Sale: ${item.item_description}`);
+      db.prepare(`UPDATE shop_accounts SET wallet_balance=wallet_balance+?, total_earned=total_earned+? WHERE id=?`)
+        .run(shopPayout, shopPayout, item.shop_id);
+    }
+  })();
+  res.set('Access-Control-Allow-Origin', '*');
+  res.json({ ok: true });
+});
+
+// GET /admin/shops/:id/consign — list consign items for a shop
+app.get('/admin/shops/:id/consign', (req, res) => {
+  const key = req.headers['x-admin-key'] || req.query.key;
+  if (key !== process.env.ADMIN_KEY) return res.status(401).json({ error: 'Unauthorized' });
+  const items = db.prepare(`SELECT * FROM shop_consign_items WHERE shop_id=? ORDER BY created_at DESC`).all(req.params.id)
+    .map(i => ({ ...i, sale_price: i.sale_price ? i.sale_price/100 : null, shop_payout: i.shop_payout ? i.shop_payout/100 : null, platform_cut: i.platform_cut ? i.platform_cut/100 : null }));
+  res.set('Access-Control-Allow-Origin', '*');
+  res.json({ items });
+});
+
+// POST /admin/shops/:id/payout — record payout, deduct wallet
+app.post('/admin/shops/:id/payout', (req, res) => {
+  const key = req.headers['x-admin-key'] || req.query.key;
+  if (key !== process.env.ADMIN_KEY) return res.status(401).json({ error: 'Unauthorized' });
+  const shop = db.prepare('SELECT * FROM shop_accounts WHERE id=?').get(req.params.id);
+  if (!shop) return res.status(404).json({ error: 'Shop not found' });
+  const { amount, method, method_detail, notes } = req.body;
+  if (!amount || !method) return res.status(400).json({ error: 'amount and method required' });
+  const amountCents = Math.round(parseFloat(amount) * 100);
+  if (amountCents > shop.wallet_balance) return res.status(400).json({ error: 'Amount exceeds wallet balance' });
+  db.transaction(() => {
+    db.prepare(`INSERT INTO shop_payouts (id, shop_id, amount, method, method_detail, notes) VALUES (?,?,?,?,?,?)`)
+      .run(uuidv4(), req.params.id, amountCents, method, method_detail||null, notes||null);
+    db.prepare(`INSERT INTO shop_wallet_events (id, shop_id, amount, type, description) VALUES (?,?,?,?,?)`)
+      .run(uuidv4(), req.params.id, -amountCents, 'payout', `Payout via ${method}${method_detail?' — '+method_detail:''}`);
+    db.prepare(`UPDATE shop_accounts SET wallet_balance=wallet_balance-? WHERE id=?`).run(amountCents, req.params.id);
+  })();
+  res.set('Access-Control-Allow-Origin', '*');
+  res.json({ ok: true });
 });
 
 // ── PRO ATHLETE SHOPS ────────────────────────────────────────────────────────
@@ -2389,16 +2571,16 @@ app.post('/admin/pro-consign/items', (req, res) => {
   const key = req.headers['x-admin-key'] || req.query.key;
   if (key !== process.env.ADMIN_KEY) return res.status(401).json({ error: 'Unauthorized' });
 
-  const { athlete_name, athlete_email, athlete_phone, item_description, notes } = req.body;
-  if (!athlete_name || !athlete_email || !item_description) {
-    return res.status(400).json({ error: 'athlete_name, athlete_email, item_description required' });
+  const { athlete_id, athlete_name, athlete_email, athlete_phone, item_description, notes } = req.body;
+  if (!athlete_name || !item_description) {
+    return res.status(400).json({ error: 'athlete_name and item_description required' });
   }
 
   const id = uuidv4();
   db.prepare(`
-    INSERT INTO pro_consign_items (id, athlete_name, athlete_email, athlete_phone, item_description, notes)
-    VALUES (?, ?, ?, ?, ?, ?)
-  `).run(id, athlete_name, athlete_email, athlete_phone || null, item_description, notes || null);
+    INSERT INTO pro_consign_items (id, athlete_id, athlete_name, athlete_email, athlete_phone, item_description, notes)
+    VALUES (?, ?, ?, ?, ?, ?, ?)
+  `).run(id, athlete_id || null, athlete_name, athlete_email || '', athlete_phone || null, item_description, notes || null);
 
   res.json({ ok: true, consign_id: id });
 });
@@ -2418,10 +2600,11 @@ app.patch('/admin/pro-consign/items/:id', (req, res) => {
   if (status) { updates.push('status=?'); vals.push(status); }
   if (listing_id) { updates.push('listing_id=?'); vals.push(listing_id); }
   if (notes !== undefined) { updates.push('notes=?'); vals.push(notes); }
+  let saleCents = null, athletePayout = null, platformCut = null;
   if (sale_price !== undefined) {
-    const saleCents = Math.round(parseFloat(sale_price) * 100);
-    const athletePayout = Math.round(saleCents * 0.75);
-    const platformCut   = saleCents - athletePayout;
+    saleCents    = Math.round(parseFloat(sale_price) * 100);
+    athletePayout = Math.round(saleCents * 0.75);
+    platformCut   = saleCents - athletePayout;
     updates.push('sale_price=?', 'athlete_payout=?', 'platform_cut=?');
     vals.push(saleCents, athletePayout, platformCut);
   }
@@ -2430,7 +2613,19 @@ app.patch('/admin/pro-consign/items/:id', (req, res) => {
   if (!updates.length) return res.status(400).json({ error: 'Nothing to update' });
 
   vals.push(req.params.id);
-  db.prepare(`UPDATE pro_consign_items SET ${updates.join(',')} WHERE id=?`).run(...vals);
+
+  // If sale price being set and item has an athlete_id, credit their wallet
+  db.transaction(() => {
+    db.prepare(`UPDATE pro_consign_items SET ${updates.join(',')} WHERE id=?`).run(...vals);
+    if (saleCents && item.athlete_id && !item.sale_price) {
+      // Only credit once (item.sale_price was null before this update)
+      db.prepare(`INSERT INTO pro_consign_wallet_events (id, athlete_id, item_id, amount, type, description) VALUES (?,?,?,?,?,?)`)
+        .run(uuidv4(), item.athlete_id, req.params.id, athletePayout, 'sale', `Sale: ${item.item_description}`);
+      db.prepare(`UPDATE pro_consign_athletes SET wallet_balance=wallet_balance+?, total_earned=total_earned+? WHERE id=?`)
+        .run(athletePayout, athletePayout, item.athlete_id);
+    }
+  })();
+
   res.json({ ok: true });
 });
 
@@ -2450,6 +2645,87 @@ app.get('/admin/pro-consign/items', (req, res) => {
 
   res.set('Access-Control-Allow-Origin', '*');
   res.json({ items });
+});
+
+// ── PRO CONSIGN ATHLETE PROFILES & WALLET ────────────────────────────────────
+
+// POST /admin/pro-consign/athletes — create athlete profile
+app.post('/admin/pro-consign/athletes', (req, res) => {
+  const key = req.headers['x-admin-key'] || req.query.key;
+  if (key !== process.env.ADMIN_KEY) return res.status(401).json({ error: 'Unauthorized' });
+  const { name, email, phone, address, city, state, zip, venmo, paypal, bank_routing, bank_account, notes } = req.body;
+  if (!name || !email) return res.status(400).json({ error: 'name and email required' });
+  const id = uuidv4();
+  try {
+    db.prepare(`
+      INSERT INTO pro_consign_athletes (id, name, email, phone, address, city, state, zip, venmo, paypal, bank_routing, bank_account, notes)
+      VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)
+    `).run(id, name, email, phone||null, address||null, city||null, state||null, zip||null, venmo||null, paypal||null, bank_routing||null, bank_account||null, notes||null);
+    res.json({ ok: true, athlete_id: id });
+  } catch(e) {
+    if (e.message.includes('UNIQUE')) return res.status(400).json({ error: 'Athlete with that email already exists' });
+    throw e;
+  }
+});
+
+// GET /admin/pro-consign/athletes — list all athletes with wallet balances
+app.get('/admin/pro-consign/athletes', (req, res) => {
+  const key = req.headers['x-admin-key'] || req.query.key;
+  if (key !== process.env.ADMIN_KEY) return res.status(401).json({ error: 'Unauthorized' });
+  const athletes = db.prepare(`SELECT * FROM pro_consign_athletes ORDER BY name`).all().map(a => ({
+    ...a,
+    wallet_balance: (a.wallet_balance || 0) / 100,
+    total_earned:   (a.total_earned   || 0) / 100,
+  }));
+  res.set('Access-Control-Allow-Origin', '*');
+  res.json({ athletes });
+});
+
+// PATCH /admin/pro-consign/athletes/:id — update profile/payment info
+app.patch('/admin/pro-consign/athletes/:id', (req, res) => {
+  const key = req.headers['x-admin-key'] || req.query.key;
+  if (key !== process.env.ADMIN_KEY) return res.status(401).json({ error: 'Unauthorized' });
+  const fields = ['name','email','phone','address','city','state','zip','venmo','paypal','bank_routing','bank_account','notes','status'];
+  const updates = []; const vals = [];
+  fields.forEach(f => { if (req.body[f] !== undefined) { updates.push(`${f}=?`); vals.push(req.body[f]); } });
+  if (!updates.length) return res.status(400).json({ error: 'Nothing to update' });
+  vals.push(req.params.id);
+  db.prepare(`UPDATE pro_consign_athletes SET ${updates.join(',')} WHERE id=?`).run(...vals);
+  res.json({ ok: true });
+});
+
+// POST /admin/pro-consign/athletes/:id/payout — record a payout, deduct from wallet
+app.post('/admin/pro-consign/athletes/:id/payout', (req, res) => {
+  const key = req.headers['x-admin-key'] || req.query.key;
+  if (key !== process.env.ADMIN_KEY) return res.status(401).json({ error: 'Unauthorized' });
+  const { amount, method, method_detail, notes } = req.body;
+  if (!amount || !method) return res.status(400).json({ error: 'amount and method required' });
+  const athlete = db.prepare('SELECT * FROM pro_consign_athletes WHERE id=?').get(req.params.id);
+  if (!athlete) return res.status(404).json({ error: 'Athlete not found' });
+  const amountCents = Math.round(parseFloat(amount) * 100);
+  if (amountCents > athlete.wallet_balance) return res.status(400).json({ error: 'Amount exceeds wallet balance' });
+  const payoutId = uuidv4();
+  const eventId  = uuidv4();
+  db.transaction(() => {
+    db.prepare(`INSERT INTO pro_consign_payouts (id, athlete_id, amount, method, method_detail, notes) VALUES (?,?,?,?,?,?)`)
+      .run(payoutId, req.params.id, amountCents, method, method_detail||null, notes||null);
+    db.prepare(`INSERT INTO pro_consign_wallet_events (id, athlete_id, amount, type, description) VALUES (?,?,?,?,?)`)
+      .run(eventId, req.params.id, -amountCents, 'payout', `Payout via ${method}${method_detail ? ' — '+method_detail : ''}`);
+    db.prepare(`UPDATE pro_consign_athletes SET wallet_balance=wallet_balance-? WHERE id=?`).run(amountCents, req.params.id);
+  })();
+  res.json({ ok: true, payout_id: payoutId });
+});
+
+// GET /admin/pro-consign/athletes/:id/history — wallet event log
+app.get('/admin/pro-consign/athletes/:id/history', (req, res) => {
+  const key = req.headers['x-admin-key'] || req.query.key;
+  if (key !== process.env.ADMIN_KEY) return res.status(401).json({ error: 'Unauthorized' });
+  const events = db.prepare(`SELECT * FROM pro_consign_wallet_events WHERE athlete_id=? ORDER BY created_at DESC`).all(req.params.id)
+    .map(e => ({ ...e, amount: e.amount / 100 }));
+  const payouts = db.prepare(`SELECT * FROM pro_consign_payouts WHERE athlete_id=? ORDER BY paid_at DESC`).all(req.params.id)
+    .map(p => ({ ...p, amount: p.amount / 100 }));
+  res.set('Access-Control-Allow-Origin', '*');
+  res.json({ events, payouts });
 });
 
 // ── COMMUNITY ROUTES ──────────────────────────────────────────────────────────
