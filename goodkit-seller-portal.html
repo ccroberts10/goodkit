@@ -345,7 +345,23 @@ nav{position:sticky;top:0;z-index:100;background:var(--ink);display:flex;align-i
           </select>
         </div>
         <div class="form-group">
-          <label class="form-label">Price</label>
+          <label class="form-label">Quantity <span style="font-weight:400;color:var(--ink-soft);font-size:12px;">how many identical items?</span></label>
+          <select class="form-select" id="newQty" onchange="updateFeeCalc();document.getElementById('qtyHint').style.display=this.value>'1'?'':'none';document.getElementById('pricePerLabel').style.display=this.value>'1'?'':'none'">
+            <option value="1">1 — single item</option>
+            <option value="2">2</option>
+            <option value="3">3</option>
+            <option value="4">4</option>
+            <option value="5">5</option>
+            <option value="6">6</option>
+            <option value="7">7</option>
+            <option value="8">8</option>
+            <option value="9">9</option>
+            <option value="10">10</option>
+          </select>
+          <div id="qtyHint" style="display:none;font-size:11px;color:var(--ink-soft);margin-top:4px;">Each unit gets its own listing so buyers can purchase individually.</div>
+        </div>
+        <div class="form-group">
+          <label class="form-label">Price <span id="pricePerLabel" style="font-weight:400;color:var(--ink-soft);font-size:12px;">per item</span></label>
           <input class="form-input" type="number" id="newPrice" placeholder="0.00" min="1" step="0.01" required oninput="updateFeeCalc()">
         </div>
         <div class="form-group">
@@ -1085,27 +1101,10 @@ async function submitListing(e){
   if(!priceVal||parseFloat(priceVal)<1){showToast('Price must be at least $1','error');return;}
   if(!photoFiles.length){showToast('Please add at least one photo','error');return;}
   if(!SELLER?.stripe_connected){showToast('Connect Stripe first to receive payouts','error');return;}
+  const qty=parseInt(document.getElementById('newQty').value)||1;
   const btn=document.getElementById('submitBtn');
-  btn.disabled=true;btn.textContent='Publishing…';
-  const fd=new FormData();
-  fd.append('title',document.getElementById('newTitle').value);
-  fd.append('category',document.getElementById('newCat').value);
-  const sz=document.getElementById('newSize').value; if(sz) fd.append('size',sz);
-  fd.append('condition',document.getElementById('newCond').value);
-  fd.append('price',document.getElementById('newPrice').value);
-  fd.append('description',document.getElementById('newDesc').value);
-  fd.append('keywords',document.getElementById('newKeywords').value);
-  const ccxCode=document.getElementById('newCcxCode').value.trim(); if(ccxCode) fd.append('ccx_code',ccxCode);
-  const deliveryType = document.querySelector('input[name="delivery_type"]:checked')?.value || 'ship';
-  fd.append('delivery_type', deliveryType);
-  fd.append('weight_tier',document.getElementById('newWeight').value);
-  // Only send shipping estimate for ship deliveries; server will set 0 for pickup/detour
-  fd.append('shipping_estimate', deliveryType==='ship' ? (SHIP[document.getElementById('newWeight').value]||6) : 0);
-  fd.append('seller_email',SELLER.email||'');
-  fd.append('seller_name',SELLER.name||SELLER.email||'');
-  fd.append('stripe_account_id',SELLER.stripe_account_id||'');
-  const communityId=document.getElementById('newCommunity').value; if(communityId) fd.append('community_id',communityId);
-  // Compress all photos before upload (iPhone photos are 4-8MB and crash the server)
+  btn.disabled=true;
+  // Compress all photos once (iPhone photos are 4-8MB and crash the server)
   const compressPhoto = (file) => new Promise((resolve) => {
     const img = new Image();
     const url = URL.createObjectURL(file);
@@ -1123,16 +1122,43 @@ async function submitListing(e){
     img.src = url;
   });
   const compressedPhotos = await Promise.all(photoFiles.map(compressPhoto));
-  compressedPhotos.forEach((b, i) => fd.append('photos', b, `photo${i}.jpg`));
+  const buildFd = () => {
+    const fd=new FormData();
+    fd.append('title',document.getElementById('newTitle').value);
+    fd.append('category',document.getElementById('newCat').value);
+    const sz=document.getElementById('newSize').value; if(sz) fd.append('size',sz);
+    fd.append('condition',document.getElementById('newCond').value);
+    fd.append('price',document.getElementById('newPrice').value);
+    fd.append('description',document.getElementById('newDesc').value);
+    fd.append('keywords',document.getElementById('newKeywords').value);
+    const ccxCode=document.getElementById('newCcxCode').value.trim(); if(ccxCode) fd.append('ccx_code',ccxCode);
+    const deliveryType = document.querySelector('input[name="delivery_type"]:checked')?.value || 'ship';
+    fd.append('delivery_type', deliveryType);
+    fd.append('weight_tier',document.getElementById('newWeight').value);
+    fd.append('shipping_estimate', deliveryType==='ship' ? (SHIP[document.getElementById('newWeight').value]||6) : 0);
+    fd.append('seller_email',SELLER.email||'');
+    fd.append('seller_name',SELLER.name||SELLER.email||'');
+    fd.append('stripe_account_id',SELLER.stripe_account_id||'');
+    const communityId=document.getElementById('newCommunity').value; if(communityId) fd.append('community_id',communityId);
+    compressedPhotos.forEach((b, i) => fd.append('photos', b, `photo${i}.jpg`));
+    return fd;
+  };
   try{
-    const r=await fetch(API+'/listings',{method:'POST',body:fd});
-    let d;
-    try { d=await r.json(); } catch(_){ throw new Error('Server error — please try again in a moment'); }
-    if(!r.ok)throw new Error(d.error||'Error');
-    showToast('Listing published!','success');
+    // Post qty listings sequentially to avoid server overload
+    for(let i=0;i<qty;i++){
+      if(qty>1) btn.textContent=`Publishing ${i+1} of ${qty}…`;
+      else btn.textContent='Publishing…';
+      const r=await fetch(API+'/listings',{method:'POST',body:buildFd()});
+      let d;
+      try { d=await r.json(); } catch(_){ throw new Error('Server error — please try again in a moment'); }
+      if(!r.ok)throw new Error(d.error||'Error');
+    }
+    showToast(qty>1?`${qty} listings published!`:'Listing published!','success');
     btn.disabled=false;btn.textContent='Publish Listing';
     photoFiles=[];renderPreviews();e.target.reset();
     document.getElementById('newWeight').value='xs';
+    document.getElementById('newQty').value='1';
+    document.getElementById('qtyHint').style.display='none';
     document.getElementById('newCcxCode').value='';
     document.querySelectorAll('.tier-card').forEach((c,i)=>c.classList.toggle('selected',i===0));
     updateFeeCalc();switchTab('listings');loadDashData();
