@@ -129,6 +129,7 @@
     <div class="nav-item" onclick="nav('sales')" id="nav-sales"><span class="nav-icon">💳</span> Sales</div>
     <div class="nav-item" onclick="nav('listings')" id="nav-listings"><span class="nav-icon">📦</span> Listings</div>
     <div class="nav-item" onclick="nav('communities')" id="nav-communities"><span class="nav-icon">🏔</span> Communities</div>
+    <div class="nav-item" onclick="nav('shops')" id="nav-shops"><span class="nav-icon">🏪</span> Bike Shops</div>
     <div class="nav-item" onclick="nav('pro-athletes')" id="nav-pro-athletes"><span class="nav-icon">🏆</span> Pro Athletes</div>
     <div class="nav-item" onclick="nav('pro-consign')" id="nav-pro-consign"><span class="nav-icon">📬</span> Pro Consign</div>
     <div style="flex:1;"></div>
@@ -176,6 +177,44 @@
       <div class="table-wrap">
         <div class="table-head">Active & recent listings</div>
         <div id="listingsTable"></div>
+      </div>
+    </div>
+
+    <!-- BIKE SHOPS -->
+    <div class="section" id="section-shops">
+      <div class="section-title">Bike Shops</div>
+
+      <div class="table-wrap" style="padding:16px 20px 20px;">
+        <div class="table-head" style="padding:0 0 12px;border-bottom:none;font-size:13px;font-weight:700;">Add bike shop</div>
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;">
+          <div><label style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:0.07em;color:var(--fg2);display:block;margin-bottom:4px;">Shop Name *</label>
+            <input id="bs-name" placeholder="Hassle Free Sports" style="width:100%;padding:8px 10px;background:var(--bg3);border:1px solid var(--border);border-radius:6px;color:var(--fg);font-size:13px;outline:none;"></div>
+          <div><label style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:0.07em;color:var(--fg2);display:block;margin-bottom:4px;">URL Slug *</label>
+            <input id="bs-slug" placeholder="hassle-free-sports" style="width:100%;padding:8px 10px;background:var(--bg3);border:1px solid var(--border);border-radius:6px;color:var(--fg);font-size:13px;outline:none;font-family:monospace;" oninput="this.value=this.value.toLowerCase().replace(/[^a-z0-9-]/g,'')"></div>
+          <div><label style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:0.07em;color:var(--fg2);display:block;margin-bottom:4px;">Contact Name *</label>
+            <input id="bs-contact" placeholder="Jane Smith" style="width:100%;padding:8px 10px;background:var(--bg3);border:1px solid var(--border);border-radius:6px;color:var(--fg);font-size:13px;outline:none;"></div>
+          <div><label style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:0.07em;color:var(--fg2);display:block;margin-bottom:4px;">Email *</label>
+            <input id="bs-email" type="email" placeholder="jane@shop.com" style="width:100%;padding:8px 10px;background:var(--bg3);border:1px solid var(--border);border-radius:6px;color:var(--fg);font-size:13px;outline:none;"></div>
+          <div><label style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:0.07em;color:var(--fg2);display:block;margin-bottom:4px;">Ship-From Name</label>
+            <input id="bs-ship-name" placeholder="Hassle Free Sports" style="width:100%;padding:8px 10px;background:var(--bg3);border:1px solid var(--border);border-radius:6px;color:var(--fg);font-size:13px;outline:none;"></div>
+          <div><label style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:0.07em;color:var(--fg2);display:block;margin-bottom:4px;">Street Address</label>
+            <input id="bs-street" placeholder="123 Main St" style="width:100%;padding:8px 10px;background:var(--bg3);border:1px solid var(--border);border-radius:6px;color:var(--fg);font-size:13px;outline:none;"></div>
+          <div><label style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:0.07em;color:var(--fg2);display:block;margin-bottom:4px;">City</label>
+            <input id="bs-city" placeholder="Durango" style="width:100%;padding:8px 10px;background:var(--bg3);border:1px solid var(--border);border-radius:6px;color:var(--fg);font-size:13px;outline:none;"></div>
+          <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;">
+            <div><label style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:0.07em;color:var(--fg2);display:block;margin-bottom:4px;">State</label>
+              <input id="bs-state" placeholder="CO" maxlength="2" style="width:100%;padding:8px 10px;background:var(--bg3);border:1px solid var(--border);border-radius:6px;color:var(--fg);font-size:13px;outline:none;text-transform:uppercase;" oninput="this.value=this.value.toUpperCase()"></div>
+            <div><label style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:0.07em;color:var(--fg2);display:block;margin-bottom:4px;">ZIP</label>
+              <input id="bs-zip" placeholder="81301" style="width:100%;padding:8px 10px;background:var(--bg3);border:1px solid var(--border);border-radius:6px;color:var(--fg);font-size:13px;outline:none;"></div>
+          </div>
+        </div>
+        <div style="font-size:11px;color:var(--fg3);margin-top:10px;">Rate: 65% shop / 35% GoodKit · Shop lists their own consignment inventory · Public storefront at /shop/:slug</div>
+        <button onclick="createBikeShop()" style="margin-top:12px;padding:9px 20px;background:var(--accent);color:#fff;border:none;border-radius:7px;font-size:13px;font-weight:700;cursor:pointer;">Create Shop →</button>
+      </div>
+
+      <div class="table-wrap">
+        <div class="table-head">All bike shops <span id="bsCount" style="font-weight:400;color:var(--fg3);"></span></div>
+        <div id="bsList" style="padding:0 0 4px;"></div>
       </div>
     </div>
 
@@ -340,6 +379,7 @@ function nav(id) {
   $('section-' + id).classList.add('active');
   $('nav-' + id).classList.add('active');
   if (id === 'communities') loadCommunities();
+  if (id === 'shops') loadBikeShops();
   if (id === 'pro-athletes') loadProAthletes();
   if (id === 'pro-consign') loadConsignItems();
 }
@@ -453,6 +493,64 @@ async function addMember(communityId) {
     if (!r.ok) throw new Error('Error');
     toast(`${email} added`);
     emailEl.value = '';
+  } catch(e) { toast(e.message, true); }
+}
+
+// ── Bike Shops ────────────────────────────────────────────────────────────
+async function loadBikeShops() {
+  try {
+    const r = await fetch(`${API_BASE}/admin/shops`, { headers: { 'x-admin-key': ADMIN_KEY } });
+    const d = await r.json();
+    $('bsCount').textContent = `— ${d.shops.length}`;
+    renderBikeShops(d.shops);
+  } catch(e) { toast('Could not load bike shops', true); }
+}
+
+function renderBikeShops(shops) {
+  const el = $('bsList');
+  if (!shops.length) {
+    el.innerHTML = `<div style="padding:20px;color:var(--fg3);font-size:13px;">No bike shops yet.</div>`;
+    return;
+  }
+  el.innerHTML = shops.map(s => `
+    <div style="padding:14px 16px;border-bottom:1px solid var(--border);display:flex;align-items:center;gap:14px;flex-wrap:wrap;">
+      <div style="flex:1;min-width:0;">
+        <div style="font-weight:700;font-size:13px;">🏪 ${s.shop_name} <span style="font-family:monospace;font-size:11px;color:var(--fg3);">/shop/${s.slug}</span></div>
+        <div style="font-size:11px;color:var(--fg3);margin-top:2px;">${s.contact_name} · ${s.contact_email}</div>
+        ${s.ship_city ? `<div style="font-size:11px;color:var(--fg3);">${s.ship_city}, ${s.ship_state||''}</div>` : ''}
+      </div>
+      <div style="display:flex;gap:10px;align-items:center;font-size:12px;font-variant-numeric:tabular-nums;">
+        <span style="color:var(--fg3);">${s.listing_count} listings</span>
+        <span style="font-weight:700;color:var(--green);">${fmt(s.total_sold)} sold</span>
+        <a href="${API_BASE.replace('api.','')}/shop/${s.slug}" target="_blank" style="padding:5px 10px;font-size:11px;font-weight:600;border:1px solid var(--border);border-radius:5px;background:var(--bg3);color:var(--fg);cursor:pointer;text-decoration:none;">Storefront ↗</a>
+      </div>
+    </div>`).join('');
+}
+
+async function createBikeShop() {
+  const name    = $('bs-name').value.trim();
+  const slug    = $('bs-slug').value.trim();
+  const contact = $('bs-contact').value.trim();
+  const email   = $('bs-email').value.trim();
+  if (!name || !slug || !contact || !email) { toast('Name, slug, contact and email required', true); return; }
+  try {
+    const r = await fetch(`${API_BASE}/admin/shops/create`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'x-admin-key': ADMIN_KEY },
+      body: JSON.stringify({
+        shop_name: name, slug, contact_name: contact, contact_email: email,
+        ship_name:    $('bs-ship-name').value.trim() || name,
+        ship_street1: $('bs-street').value.trim(),
+        ship_city:    $('bs-city').value.trim(),
+        ship_state:   $('bs-state').value.trim(),
+        ship_zip:     $('bs-zip').value.trim()
+      })
+    });
+    const d = await r.json();
+    if (!r.ok) throw new Error(d.error || 'Error');
+    toast(`Shop created — login link sent to ${email}`);
+    ['bs-name','bs-slug','bs-contact','bs-email','bs-ship-name','bs-street','bs-city','bs-state','bs-zip'].forEach(id => $(id).value='');
+    loadBikeShops();
   } catch(e) { toast(e.message, true); }
 }
 
