@@ -74,13 +74,24 @@ async function createShippingLabel({ fromAddress, toAddress, weightOz, listingTi
     throw new Error('Label purchase failed: ' + (transaction.messages?.[0]?.text || transaction.status));
   }
 
+  // Register a tracker so Shippo fires track_updated webhooks to us
+  let trackerObjectId = null;
+  try {
+    const tracker = await shippoRequest('POST', '/trackers/', {
+      tracking_number: transaction.tracking_number,
+      carrier: cheapest.provider.toLowerCase()
+    });
+    trackerObjectId = tracker.object_id || null;
+  } catch(te) { console.warn('[Shippo] Tracker registration failed:', te.message); }
+
   return {
     labelUrl:       transaction.label_url,
     trackingNumber: transaction.tracking_number,
     trackingUrl:    transaction.tracking_url_provider,
     carrier:        cheapest.provider,
     service:        cheapest.servicelevel?.name || cheapest.servicelevel_name,
-    rate:           cheapest.amount
+    rate:           cheapest.amount,
+    trackerObjectId
   };
 }
 
@@ -224,6 +235,9 @@ db.exec(`
   // Listing lifecycle: re-engagement nudge + auto-expire
   `ALTER TABLE listings ADD COLUMN reminded_at TEXT DEFAULT NULL`,
   `ALTER TABLE listings ADD COLUMN final_warned_at TEXT DEFAULT NULL`,
+  // Shippo tracking webhook integration
+  `ALTER TABLE sales ADD COLUMN shippo_tracker_id TEXT DEFAULT NULL`,
+  `ALTER TABLE sales ADD COLUMN delivered_at TEXT DEFAULT NULL`,
 ].forEach(sql => { try { db.exec(sql); } catch(e) {} });
 
 // Shop consignment migrations
@@ -1384,6 +1398,64 @@ app.patch('/listings/:id', (req, res) => {
   } catch(err) { res.status(500).json({ error: err.message }); }
 });
 
+// ── SHIPPO TRACKING WEBHOOK ───────────────────────────────────────────────────
+// Shippo fires track_updated when carrier status changes.
+// Register this URL in Shippo dashboard: https://good-kit.com/webhooks/shippo
+// Event type: track_updated
+// No signature secret needed — Shippo uses HMAC only on newer webhook versions;
+// we validate by looking up the tracker_id in our own DB.
+
+app.post('/webhooks/shippo', express.json(), async (req, res) => {
+  try {
+    const event = req.body;
+    // Shippo sends: { event: 'track_updated', data: { tracking_status: { status }, object_id, tracking_number } }
+    if (event.event !== 'track_updated') return res.json({ received: true });
+
+    const data = event.data || {};
+    const trackerId = data.object_id;
+    const status = data.tracking_status?.status; // DELIVERED, TRANSIT, UNKNOWN, etc.
+
+    if (!trackerId || status !== 'DELIVERED') return res.json({ received: true });
+
+    // Find the sale with this tracker
+    const sale = db.prepare("SELECT s.*, l.stripe_account_id, l.title FROM sales s JOIN listings l ON s.listing_id=l.id WHERE s.shippo_tracker_id=?").get(trackerId);
+    if (!sale) {
+      console.warn(`[Shippo webhook] No sale found for tracker ${trackerId}`);
+      return res.json({ received: true });
+    }
+
+    if (sale.status === 'paid_out' || sale.delivered_at) {
+      return res.json({ received: true }); // already processed
+    }
+
+    const deliveredAt = new Date().toISOString();
+    const payoutAfter = new Date(Date.now() + 48 * 60 * 60 * 1000).toISOString();
+
+    db.prepare("UPDATE sales SET status='delivered', delivered_at=?, payout_after=? WHERE id=?")
+      .run(deliveredAt, payoutAfter, sale.id);
+
+    console.log(`[Shippo] Delivery confirmed for sale ${sale.id} (${sale.title}). Payout releases at ${payoutAfter}`);
+
+    // Notify buyer — let them know it arrived and they have 48h to flag issues
+    const flagUrl = `${process.env.SITE_URL || 'https://good-kit.com'}/flag-purchase?sale=${sale.id}&email=${encodeURIComponent(sale.buyer_email)}`;
+    const deadline = new Date(payoutAfter).toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric', hour: 'numeric', minute: '2-digit', timeZoneName: 'short' });
+    await sendEmail(sale.buyer_email, `Your order has been delivered: ${sale.title}`, emailTemplate('Your Item Arrived 📦',
+      `<p style="font-size:15px;color:#1A1A14;margin:0 0 16px;">Your <strong>${sale.title}</strong> has been marked as delivered.</p>
+       <div style="background:#EBF4EF;border:1px solid #1D5C3A;padding:16px 20px;margin-bottom:20px;">
+         <p style="font-size:14px;font-weight:700;color:#1D5C3A;margin:0 0 8px;">🛡️ You have 48 hours to flag any issues</p>
+         <p style="font-size:13px;color:#333;margin:0 0 8px;">Item not as described? Damaged? Flag it before <strong>${deadline}</strong> and we'll step in before any money moves.</p>
+         <a href="${flagUrl}" style="display:inline-block;background:#1D5C3A;color:white;padding:10px 20px;font-size:13px;font-weight:600;text-decoration:none;">Report a Problem →</a>
+       </div>
+       <p style="font-size:12px;color:#888;margin:0;">No issues? No action needed — the seller is paid out automatically after ${deadline}.</p>`
+    )).catch(e => console.warn('[Shippo webhook] buyer email failed:', e.message));
+
+    res.json({ received: true });
+  } catch(err) {
+    console.error('[Shippo webhook] error:', err.message);
+    res.status(500).json({ error: err.message });
+  }
+});
+
 // ── WEBHOOK ───────────────────────────────────────────────────────────────────
 
 app.post('/webhook', async (req, res) => {
@@ -1503,7 +1575,7 @@ app.post('/webhook', async (req, res) => {
             labelUrl       = label.labelUrl;
             trackingNumber = label.trackingNumber;
             trackingUrl    = label.trackingUrl;
-            db.prepare("UPDATE sales SET label_url=?, tracking_number=?, tracking_url=? WHERE id=?").run(labelUrl, trackingNumber, trackingUrl, sale.id);
+            db.prepare("UPDATE sales SET label_url=?, tracking_number=?, tracking_url=?, shippo_tracker_id=? WHERE id=?").run(labelUrl, trackingNumber, trackingUrl, label.trackerObjectId || null, sale.id);
             console.log(`Label generated: ${trackingNumber} (${label.carrier} ${label.service} $${label.rate})`);
           } else {
             console.warn('Shippo label skipped — missing seller address or buyer address');
