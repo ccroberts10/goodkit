@@ -444,6 +444,7 @@ db.exec(`
   `ALTER TABLE listings ADD COLUMN community_id TEXT DEFAULT NULL`,
   `ALTER TABLE communities ADD COLUMN featured_listing_ids TEXT DEFAULT '[]'`,
   `ALTER TABLE listings ADD COLUMN delivery_type TEXT DEFAULT 'ship'`,
+  `ALTER TABLE listings ADD COLUMN allows_pickup INTEGER DEFAULT 0`,
   // Stripe Connect on pro consign athletes
   `ALTER TABLE pro_consign_athletes ADD COLUMN stripe_account_id TEXT DEFAULT NULL`,
   `ALTER TABLE pro_consign_athletes ADD COLUMN stripe_status TEXT DEFAULT 'no_stripe'`,
@@ -996,7 +997,7 @@ app.get('/seller/portal', (req, res) => {
 
 app.post('/listings', upload.array('photos', 8), async (req, res) => {
   try {
-    const { seller_name, seller_email, stripe_account_id: client_stripe_id, title, category, size, description, condition, price, shipping_estimate, weight_oz, keywords, ccx_code, delivery_type } = req.body;
+    const { seller_name, seller_email, stripe_account_id: client_stripe_id, title, category, size, description, condition, price, shipping_estimate, weight_oz, keywords, ccx_code, allows_pickup } = req.body;
     if (!seller_name || !seller_email || !title || !price) return res.status(400).json({ error: 'Missing required fields' });
     // Fall back to session-stored stripe_account_id if client didn't send one
     const sellerSession = db.prepare("SELECT * FROM seller_sessions WHERE email=? AND used=1 AND stripe_account_id IS NOT NULL AND stripe_account_id != '' ORDER BY created_at DESC LIMIT 1").get(seller_email);
@@ -1016,7 +1017,8 @@ app.post('/listings', upload.array('photos', 8), async (req, res) => {
     }
     const id       = uuidv4();
     const stripeId = (stripe_account_id && stripe_account_id.trim() !== '') ? stripe_account_id.trim() : null;
-    const validDeliveryType = ['ship', 'local_pickup', 'detour'].includes(delivery_type) ? delivery_type : 'ship';
+    const validDeliveryType = 'ship'; // delivery method chosen by buyer at checkout
+    const allowsPickup = allows_pickup === '1' || allows_pickup === 'true' || allows_pickup === true ? 1 : 0;
     // Validate community_id if provided — must exist and be active
     let validCommunityId = null;
     if (req.body.community_id) {
@@ -1052,8 +1054,8 @@ Write the description as if you are describing the item to a buyer. Include: wha
       }
     }
 
-    db.prepare(`INSERT INTO listings (id,seller_name,seller_email,stripe_account_id,title,category,size,description,condition,price,shipping_estimate,weight_oz,photos,status,keywords,ccx_code,delivery_type,community_id) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,'approved',?,?,?,?)`)
-      .run(id, seller_name.trim(), seller_email.trim(), stripeId, title.trim(), category || 'Other', size || '', finalDescription, condition || 'Good', priceInCents, shippingCents, weightOz, JSON.stringify(photos), keywords || '', validCcxCode, validDeliveryType, validCommunityId);
+    db.prepare(`INSERT INTO listings (id,seller_name,seller_email,stripe_account_id,title,category,size,description,condition,price,shipping_estimate,weight_oz,photos,status,keywords,ccx_code,delivery_type,allows_pickup,community_id) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,'approved',?,?,?,?,?)`)
+      .run(id, seller_name.trim(), seller_email.trim(), stripeId, title.trim(), category || 'Other', size || '', finalDescription, condition || 'Good', priceInCents, shippingCents, weightOz, JSON.stringify(photos), keywords || '', validCcxCode, validDeliveryType, allowsPickup, validCommunityId);
     const newListing = db.prepare("SELECT * FROM listings WHERE id = ?").get(id);
     await fireListingAlerts(newListing);
     await sendEmail(NOTIFY_EMAIL, `[GoodKit] New listing: ${title}`, `Seller: ${seller_name} · ${seller_email}\nItem: ${title}\nPrice: $${priceInCents/100}\nWeight: ${weightOz}oz${validCcxCode ? `\nCCX: ${validCcxCode}` : ''}`);
@@ -1080,7 +1082,8 @@ app.get('/listings', (req, res) => {
         shipping_estimate: (l.shipping_estimate || 0) / 100,
         split:             calculateSplit(l.price, l.shipping_estimate || 0),
         label:             getLabelTier(l.weight_oz),
-        delivery_type:     l.delivery_type || 'ship'
+        delivery_type:     l.delivery_type || 'ship',
+        allows_pickup:     l.allows_pickup || 0
       }));
     if (category) listings = listings.filter(l => l.category === category);
     if (maxPrice)  listings = listings.filter(l => l.price <= parseFloat(maxPrice));
@@ -1151,9 +1154,10 @@ app.post('/checkout', async (req, res) => {
     const listing = db.prepare("SELECT * FROM listings WHERE id=? AND status='approved'").get(listingId);
     if (!listing) return res.status(404).json({ error: 'Listing not found or no longer available' });
 
-    // Use listing's delivery_type as truth; buyer can't override to a different mode
-    const resolvedDeliveryType = listing.delivery_type || deliveryType || 'ship';
-    const shippingCents = (resolvedDeliveryType === 'local_pickup' || resolvedDeliveryType === 'pickup') ? 0 : (listing.shipping_estimate || 0);
+    // Buyer chooses ship vs pickup (if seller allows); validate the choice
+    const buyerWantsPickup = deliveryType === 'local_pickup' && listing.allows_pickup;
+    const resolvedDeliveryType = buyerWantsPickup ? 'local_pickup' : 'ship';
+    const shippingCents = buyerWantsPickup ? 0 : (listing.shipping_estimate || 0);
     const split         = calculateSplit(listing.price, shippingCents, listing.ccx_code);
     const totalCharge   = listing.price + shippingCents;
     const labelInfo     = getLabelTier(listing.weight_oz);
