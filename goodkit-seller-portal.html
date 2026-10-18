@@ -117,6 +117,7 @@ nav{position:sticky;top:0;z-index:100;background:var(--ink);display:flex;align-i
 .status-badge{display:inline-block;font-size:10px;font-weight:600;letter-spacing:0.07em;text-transform:uppercase;padding:2px 7px;border-radius:4px;}
 .badge-active{background:rgba(26,107,26,0.1);color:#1a6b1a;}
 .badge-sold{background:rgba(17,17,17,0.08);color:var(--ink-soft);}
+.badge-expired{background:rgba(180,60,0,0.1);color:#b43c00;}
 /* OFFERS / MESSAGES */
 .thread-row{padding:14px 0;border-bottom:1px solid var(--border);display:flex;flex-direction:column;gap:5px;}
 .thread-from{font-size:13px;font-weight:600;}
@@ -667,13 +668,14 @@ function renderListings(listings){
       </div>
       <div class="listing-info">
         <div class="listing-title">${l.title}</div>
-        <div class="listing-meta">${l.category}${l.size?' · '+l.size:''} · <span class="status-badge badge-${l.status==='active'?'active':'sold'}">${(l.status||'').toUpperCase()}</span>${!l.keywords?` · <span style="color:#c17900;font-size:11px;font-weight:600;">⚠ Add keywords to get found</span>`:`<span style="font-size:11px;color:var(--ink-soft)"> · 🔍 ${l.keywords}</span>`}</div>
+        <div class="listing-meta">${l.category}${l.size?' · '+l.size:''} · <span class="status-badge badge-${l.status==='active'||l.status==='approved'?'active':l.status==='expired'?'expired':'sold'}">${(l.status||'').toUpperCase()}</span>${!l.keywords?` · <span style="color:#c17900;font-size:11px;font-weight:600;">⚠ Add keywords to get found</span>`:`<span style="font-size:11px;color:var(--ink-soft)"> · 🔍 ${l.keywords}</span>`}</div>
       </div>
       <div class="listing-price">$${Number(l.price).toFixed(0)}</div>
       <div class="listing-actions">
         <button class="btn btn-outline btn-xs" onclick="toggleEdit('${l.id}',${Number(l.price).toFixed(2)},'${(l.category||'').replace(/'/g,"\\'")}','${(l.size||'').replace(/'/g,"\\'")}')">Edit</button>
         ${l.status==='approved'?`<button class="btn btn-outline btn-xs" onclick="openShareModal('${l.id}','${(l.title||'').replace(/'/g,"\\'")}',${Number(l.price).toFixed(2)},'${l.photos&&l.photos.length?l.photos[0]:''}','${(l.condition||'').replace(/'/g,"\\'")}')">Share</button>`:''}
         ${l.status==='approved'?`<button class="btn btn-warning btn-xs" onclick="markSoldElsewhere('${l.id}','${(l.title||'').replace(/'/g,"\\'")}')">Sold Elsewhere</button>`:''}
+        ${l.status==='expired'?`<button class="btn btn-primary btn-xs" onclick="relistListing('${l.id}','${(l.title||'').replace(/'/g,"\\'")}')">Relist</button>`:''}
         <button class="btn btn-danger btn-xs" onclick="deleteListing('${l.id}','${(l.title||'').replace(/'/g,"\\'")}')">Delete</button>
       </div>
     </div>
@@ -820,6 +822,14 @@ async function deleteListing(id,title){
   }catch(e){showToast(e.message||'Could not delete','error');}
 }
 
+async function relistListing(id,title){
+  try{
+    const r=await fetch(API+'/listings/'+id,{method:'PATCH',headers:{'Content-Type':'application/json'},body:JSON.stringify({token:SESSION,status:'approved'})});
+    const d=await r.json();
+    if(!r.ok)throw new Error(d.error||'Error');
+    showToast('"'+title+'" is live again for 30 days 🎉');loadDashData();
+  }catch(e){showToast(e.message||'Could not relist','error');}
+}
 async function markSoldElsewhere(id,title){
   if(!confirm('Mark "'+title+'" as sold?\n\nThis removes it from the marketplace immediately.'))return;
   try{
