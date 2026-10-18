@@ -133,6 +133,7 @@
     <div class="nav-item" onclick="nav('pro-athletes')" id="nav-pro-athletes"><span class="nav-icon">🏆</span> Pro Athletes</div>
     <div class="nav-item" onclick="nav('pro-consign')" id="nav-pro-consign"><span class="nav-icon">📬</span> Pro Consign</div>
     <div style="flex:1;"></div>
+    <div class="nav-item" onclick="nav('emails')" id="nav-emails"><span class="nav-icon">✉️</span> Email List</div>
     <div class="nav-item" onclick="refresh()" style="color:var(--fg3);font-size:12px;"><span class="nav-icon">↻</span> Refresh</div>
     <div class="nav-item" onclick="logout()" style="color:var(--fg3);font-size:12px;"><span class="nav-icon">→</span> Sign out</div>
   </div>
@@ -338,6 +339,28 @@
         <div id="commList" style="padding:0 0 4px;"></div>
       </div>
     </div>
+
+    <div class="section" id="section-emails">
+      <div class="section-title">Email List</div>
+      <div class="table-wrap">
+        <div class="table-head">
+          All users &amp; subscribers
+          <div style="display:flex;gap:8px;align-items:center;">
+            <span id="emailCount" style="font-size:12px;color:var(--fg2);"></span>
+            <button onclick="copyEmails()" style="padding:5px 12px;background:var(--accent);color:#fff;border:none;border-radius:5px;font-size:12px;font-weight:700;cursor:pointer;">Copy all emails</button>
+            <button onclick="downloadEmailCsv()" style="padding:5px 12px;background:var(--bg3);color:var(--fg);border:1px solid var(--border);border-radius:5px;font-size:12px;font-weight:700;cursor:pointer;">⬇ CSV</button>
+          </div>
+        </div>
+        <div style="padding:10px 16px;border-bottom:1px solid var(--border);display:flex;gap:8px;flex-wrap:wrap;">
+          <label style="font-size:12px;display:flex;align-items:center;gap:4px;cursor:pointer;"><input type="checkbox" id="filt-seller" checked onchange="renderEmails()"> Sellers</label>
+          <label style="font-size:12px;display:flex;align-items:center;gap:4px;cursor:pointer;"><input type="checkbox" id="filt-buyer" checked onchange="renderEmails()"> Buyers</label>
+          <label style="font-size:12px;display:flex;align-items:center;gap:4px;cursor:pointer;"><input type="checkbox" id="filt-alert" checked onchange="renderEmails()"> Alert subscribers</label>
+          <label style="font-size:12px;display:flex;align-items:center;gap:4px;cursor:pointer;"><input type="checkbox" id="filt-offer" checked onchange="renderEmails()"> Offer makers</label>
+        </div>
+        <div id="emailTable"></div>
+      </div>
+    </div>
+
   </div>
 </div>
 
@@ -410,6 +433,7 @@ function nav(id) {
   if (id === 'shops') loadBikeShops();
   if (id === 'pro-athletes') loadProAthletes();
   if (id === 'pro-consign') loadConsignItems();
+  if (id === 'emails') loadEmails();
 }
 
 function render() {
@@ -1171,6 +1195,78 @@ async function payoutTeam(teamId, teamName, balance) {
 document.addEventListener('keydown', e => {
   if (e.key === 'Enter' && $('authGate').style.display !== 'none') login();
 });
+
+// ── Email List ────────────────────────────────────────────────────────────────
+let EMAIL_DATA = [];
+
+async function loadEmails() {
+  $('emailTable').innerHTML = '<div style="padding:20px;color:var(--fg2);font-size:13px;">Loading…</div>';
+  try {
+    const r = await fetch(`${API_BASE}/admin/emails`, { headers: { 'x-admin-key': ADMIN_KEY } });
+    const d = await r.json();
+    if (!d.success) throw new Error(d.error);
+    EMAIL_DATA = d.emails;
+    renderEmails();
+  } catch(e) { $('emailTable').innerHTML = `<div style="padding:20px;color:var(--red);font-size:13px;">${e.message}</div>`; }
+}
+
+function renderEmails() {
+  const sources = [];
+  if ($('filt-seller')?.checked) sources.push('seller');
+  if ($('filt-buyer')?.checked) sources.push('buyer');
+  if ($('filt-alert')?.checked) sources.push('alert_subscriber');
+  if ($('filt-offer')?.checked) sources.push('offer');
+
+  const filtered = EMAIL_DATA.filter(r => r.sources.some(s => sources.includes(s)));
+  $('emailCount').textContent = `${filtered.length} of ${EMAIL_DATA.length}`;
+
+  if (!filtered.length) {
+    $('emailTable').innerHTML = '<div style="padding:20px;color:var(--fg2);font-size:13px;">No emails match filters.</div>';
+    return;
+  }
+
+  const sourceLabel = s => ({ seller: '🏪 seller', buyer: '🛒 buyer', alert_subscriber: '🔔 alert', offer: '💬 offer' })[s] || s;
+
+  $('emailTable').innerHTML = `<table>
+    <tr><th>Email</th><th>Name</th><th>Sources</th></tr>
+    ${filtered.map(r => `<tr>
+      <td class="mono" style="font-size:12px;">${r.email}</td>
+      <td style="color:var(--fg2);font-size:12px;">${r.name || '—'}</td>
+      <td style="font-size:11px;">${r.sources.map(sourceLabel).join(' · ')}</td>
+    </tr>`).join('')}
+  </table>`;
+}
+
+function getFilteredEmails() {
+  const sources = [];
+  if ($('filt-seller')?.checked) sources.push('seller');
+  if ($('filt-buyer')?.checked) sources.push('buyer');
+  if ($('filt-alert')?.checked) sources.push('alert_subscriber');
+  if ($('filt-offer')?.checked) sources.push('offer');
+  return EMAIL_DATA.filter(r => r.sources.some(s => sources.includes(s))).map(r => r.email);
+}
+
+async function copyEmails() {
+  const emails = getFilteredEmails().join(', ');
+  try {
+    await navigator.clipboard.writeText(emails);
+    toast(`Copied ${getFilteredEmails().length} emails`);
+  } catch { toast('Copy failed — try the CSV download', true); }
+}
+
+function downloadEmailCsv() {
+  const sources = [];
+  if ($('filt-seller')?.checked) sources.push('seller');
+  if ($('filt-buyer')?.checked) sources.push('buyer');
+  if ($('filt-alert')?.checked) sources.push('alert_subscriber');
+  if ($('filt-offer')?.checked) sources.push('offer');
+  const filtered = EMAIL_DATA.filter(r => r.sources.some(s => sources.includes(s)));
+  const csv = ['email,name,sources', ...filtered.map(r => `${r.email},"${r.name.replace(/"/g,'""')}","${r.sources.join(';')}"`)].join('\n');
+  const a = document.createElement('a');
+  a.href = 'data:text/csv;charset=utf-8,' + encodeURIComponent(csv);
+  a.download = `goodkit-emails-${new Date().toISOString().slice(0,10)}.csv`;
+  a.click();
+}
 </script>
 </body>
 </html>

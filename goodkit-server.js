@@ -1989,6 +1989,28 @@ app.post('/admin/sales/:id/resolve-flag', (req, res) => {
   } catch(err) { res.status(500).json({ error: err.message }); }
 });
 
+app.get('/admin/emails', (req, res) => {
+  const key = req.headers['x-admin-key'] || req.query.key || req.query.adminKey;
+  if (key !== process.env.ADMIN_KEY) return res.status(401).json({ error: 'Unauthorized' });
+  try {
+    const map = new Map(); // email -> {email, sources: Set, name}
+    const add = (email, source, name) => {
+      if (!email) return;
+      const e = email.toLowerCase().trim();
+      if (!map.has(e)) map.set(e, { email: e, name: name || '', sources: new Set() });
+      map.get(e).sources.add(source);
+      if (name && !map.get(e).name) map.get(e).name = name;
+    };
+    db.prepare("SELECT DISTINCT email FROM seller_sessions WHERE used=1").all().forEach(r => add(r.email, 'seller'));
+    db.prepare("SELECT DISTINCT buyer_email, buyer_name FROM sales").all().forEach(r => add(r.buyer_email, 'buyer', r.buyer_name));
+    db.prepare("SELECT DISTINCT email FROM listing_alerts WHERE active=1").all().forEach(r => add(r.email, 'alert_subscriber'));
+    db.prepare("SELECT DISTINCT buyer_email, buyer_name FROM offers").all().forEach(r => add(r.buyer_email, 'offer', r.buyer_name));
+    const list = [...map.values()].map(r => ({ email: r.email, name: r.name, sources: [...r.sources] }))
+      .sort((a, b) => a.email.localeCompare(b.email));
+    res.json({ success: true, count: list.length, emails: list });
+  } catch(err) { res.status(500).json({ error: err.message }); }
+});
+
 app.get('/admin/alerts', (req, res) => {
   const key = req.headers['x-admin-key'] || req.query.key || req.query.adminKey;
   if (key !== process.env.ADMIN_KEY) return res.status(401).json({ error: 'Unauthorized' });
