@@ -1009,8 +1009,37 @@ app.post('/listings', upload.array('photos', 8), async (req, res) => {
       const comm = db.prepare("SELECT id FROM communities WHERE id=? AND status='active'").get(req.body.community_id);
       validCommunityId = comm ? comm.id : null;
     }
+
+    // Auto-generate SEO-optimized description if seller didn't write one (or wrote <20 chars)
+    let finalDescription = (description || '').trim();
+    if (finalDescription.length < 20 && process.env.ANTHROPIC_API_KEY) {
+      try {
+        const seoPrompt = `Generate a 2-3 sentence SEO-optimized product description for this used cycling gear listing. Be specific, factual, and include relevant search terms naturally.
+
+Item: ${title.trim()}
+Category: ${category || 'cycling gear'}
+Condition: ${condition || 'Good'}
+Price: $${(priceInCents/100).toFixed(2)}
+Keywords: ${keywords || ''}
+
+Write the description as if you are describing the item to a buyer. Include: what the item is, condition details, compatibility notes if relevant, and why it's a good buy. Do NOT use hype words. Return only the description text, no quotes, no labels.`;
+
+        const seoResp = await fetch('https://api.anthropic.com/v1/messages', {
+          method: 'POST',
+          headers: { 'x-api-key': process.env.ANTHROPIC_API_KEY, 'anthropic-version': '2023-06-01', 'Content-Type': 'application/json' },
+          body: JSON.stringify({ model: 'claude-haiku-4-5-20251001', max_tokens: 200, messages: [{ role: 'user', content: seoPrompt }] })
+        });
+        const seoData = await seoResp.json();
+        const generated = seoData.content?.[0]?.text?.trim();
+        if (generated && generated.length > 20) finalDescription = generated;
+        console.log('[SEO] Auto-generated description for:', title.trim());
+      } catch(seoErr) {
+        console.warn('[SEO] Description generation failed, using original:', seoErr.message);
+      }
+    }
+
     db.prepare(`INSERT INTO listings (id,seller_name,seller_email,stripe_account_id,title,category,size,description,condition,price,shipping_estimate,weight_oz,photos,status,keywords,ccx_code,delivery_type,community_id) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,'approved',?,?,?,?)`)
-      .run(id, seller_name.trim(), seller_email.trim(), stripeId, title.trim(), category || 'Other', size || '', description || '', condition || 'Good', priceInCents, shippingCents, weightOz, JSON.stringify(photos), keywords || '', validCcxCode, validDeliveryType, validCommunityId);
+      .run(id, seller_name.trim(), seller_email.trim(), stripeId, title.trim(), category || 'Other', size || '', finalDescription, condition || 'Good', priceInCents, shippingCents, weightOz, JSON.stringify(photos), keywords || '', validCcxCode, validDeliveryType, validCommunityId);
     const newListing = db.prepare("SELECT * FROM listings WHERE id = ?").get(id);
     await fireListingAlerts(newListing);
     await sendEmail(NOTIFY_EMAIL, `[GoodKit] New listing: ${title}`, `Seller: ${seller_name} · ${seller_email}\nItem: ${title}\nPrice: $${priceInCents/100}\nWeight: ${weightOz}oz${validCcxCode ? `\nCCX: ${validCcxCode}` : ''}`);
@@ -2049,6 +2078,24 @@ function slugify(str) {
   return (str || '').toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '').slice(0, 60);
 }
 
+// Category groups for landing pages
+const CATEGORY_GROUPS = [
+  { slug: 'drivetrains',    label: 'Drivetrains',       desc: 'Used chains, cassettes, derailleurs, shifters, cranks, and bottom brackets for road and mountain bikes.',   cats: ['Chains','Cassettes','Chainrings','Derailleurs','Shifters','Cranks','Bottom Brackets','Cables & Housing'] },
+  { slug: 'brakes',         label: 'Brakes',            desc: 'Used brake levers, calipers, rotors, pads, and hydraulic hoses for road, gravel, and mountain bikes.',    cats: ['Brake Levers','Brake Calipers','Rotors','Brake Pads','Brake Hoses'] },
+  { slug: 'cockpit',        label: 'Cockpit & Steering', desc: 'Used handlebars, stems, grips, bar tape, and headsets to dial in your ride position.',                    cats: ['Handlebars','Stems','Grips','Bar Tape','Headsets'] },
+  { slug: 'saddles',        label: 'Saddles & Seatposts', desc: 'Used saddles, seatposts, and dropper posts for road, gravel, and mountain bikes.',                       cats: ['Saddles','Seatposts','Dropper Posts'] },
+  { slug: 'pedals',         label: 'Pedals',            desc: 'Used flat pedals and clipless pedals for mountain biking, road riding, and commuting.',                    cats: ['Flat Pedals','Clipless Pedals'] },
+  { slug: 'suspension',     label: 'Suspension',        desc: 'Used forks, rear shocks, and suspension components for mountain bikes.',                                   cats: ['Forks','Rear Shocks','Suspension Parts'] },
+  { slug: 'wheels',         label: 'Wheels & Tires',    desc: 'Used wheels, tires, tubes, hubs, and rims for road, gravel, and mountain biking.',                        cats: ['Wheels','Tires','Tubes','Hubs','Rims'] },
+  { slug: 'apparel',        label: 'Apparel',           desc: 'Used cycling jerseys, bibs, shorts, jackets, base layers, socks, and gloves.',                            cats: ['Jerseys','Bibs & Shorts','Jackets','Base Layers','Socks','Gloves'] },
+  { slug: 'helmets-protection', label: 'Helmets & Protection', desc: 'Used cycling helmets, pads, and body armor for road, gravel, and mountain biking.',               cats: ['Helmets','Pads & Protection'] },
+  { slug: 'shoes',          label: 'Cycling Shoes',     desc: 'Used road cycling shoes, MTB shoes, and casual cycling shoes.',                                           cats: ['MTB Shoes','Road Shoes','Casual Cycling Shoes'] },
+  { slug: 'bags-packs',     label: 'Bags & Packs',      desc: 'Used hydration packs, frame bags, saddle bags, handlebar bags, backpacks, and hip packs for cycling.',    cats: ['Hydration Packs','Frame Bags','Saddle Bags','Handlebar Bags','Backpacks','Hip Packs'] },
+  { slug: 'electronics',    label: 'Electronics & GPS', desc: 'Used bike computers, GPS units, power meters, heart rate monitors, lights, and smart trainers.',           cats: ['Electronics','Lights','Bike Computers','GPS Units','Heart Rate Monitors','Power Meters','Sensors & Accessories','Smart Trainers'] },
+  { slug: 'tools',          label: 'Tools & Maintenance', desc: 'Used bike tools, work stands, pumps, lube, and cleaning supplies.',                                     cats: ['Tools','Stands & Workstands','Pumps','Lube & Cleaners'] },
+  { slug: 'frames-bikes',   label: 'Frames & Complete Bikes', desc: 'Used bike frames and complete bikes — road, gravel, mountain, and more.',                           cats: ['Frames','Complete Bikes'] },
+];
+
 // Individual listing page — crawlable, OG-tagged, links to marketplace
 // Supports both /listing/:id and /listing/:id-slug (slug is ignored, id drives the lookup)
 app.get('/listing/:idslug', (req, res) => {
@@ -2104,7 +2151,7 @@ app.get('/listing/:idslug', (req, res) => {
     "@type": "BreadcrumbList",
     "itemListElement": [
       { "@type": "ListItem", "position": 1, "name": "GoodKit", "item": SITE_URL },
-      { "@type": "ListItem", "position": 2, "name": listing.category || "Gear", "item": `${SITE_URL}/marketplace` },
+      { "@type": "ListItem", "position": 2, "name": listing.category || "Gear", "item": (() => { const g = CATEGORY_GROUPS.find(g => g.cats.includes(listing.category)); return g ? `${SITE_URL}/gear/${g.slug}` : `${SITE_URL}/marketplace`; })() },
       { "@type": "ListItem", "position": 3, "name": listing.title, "item": canonicalUrl }
     ]
   })}</script>
@@ -2209,13 +2256,138 @@ function setPhoto(src, el){
   } catch(err) { res.status(500).send('Error loading listing'); }
 });
 
-// Sitemap — includes all active listings
+// ── CATEGORY LANDING PAGES ─────────────────────────────────────────────────
+app.get('/gear/:categorySlug', (req, res) => {
+  const group = CATEGORY_GROUPS.find(g => g.slug === req.params.categorySlug);
+  if (!group) return res.status(404).send('<h1>Category not found</h1>');
+
+  const placeholders = group.cats.map(() => '?').join(',');
+  const listings = db.prepare(
+    `SELECT id, title, category, condition, price, photos, description FROM listings WHERE status='approved' AND category IN (${placeholders}) ORDER BY created_at DESC LIMIT 60`
+  ).all(...group.cats);
+
+  const canonicalUrl = `${SITE_URL}/gear/${group.slug}`;
+  const listingCards = listings.map(l => {
+    const photos = JSON.parse(l.photos || '[]');
+    const photo = photos[0] ? `${SITE_URL}${photos[0]}` : null;
+    const price = (l.price / 100).toFixed(2);
+    const slug = `${l.id}-${slugify(l.title)}`;
+    return `<a href="${SITE_URL}/listing/${slug}" class="card">
+      <div class="card-img">${photo ? `<img src="${photo}" alt="${l.title}" loading="lazy">` : '<div class="no-img">🚴</div>'}</div>
+      <div class="card-body">
+        <div class="card-title">${l.title}</div>
+        <div class="card-meta">${l.condition} · ${l.category}</div>
+        <div class="card-price">$${price}</div>
+      </div>
+    </a>`;
+  }).join('');
+
+  const itemListSchema = listings.map((l, i) => ({
+    '@type': 'ListItem',
+    position: i + 1,
+    url: `${SITE_URL}/listing/${l.id}-${slugify(l.title)}`,
+    name: l.title
+  }));
+
+  res.setHeader('Content-Type', 'text/html');
+  res.send(`<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+  <title>Used ${group.label} for Sale — GoodKit Cycling Marketplace</title>
+  <meta name="description" content="${group.desc} Shop peer-to-peer on GoodKit — free shipping, easy returns.">
+  <link rel="canonical" href="${canonicalUrl}">
+  <meta property="og:type" content="website">
+  <meta property="og:title" content="Used ${group.label} for Sale — GoodKit">
+  <meta property="og:description" content="${group.desc}">
+  <meta property="og:url" content="${canonicalUrl}">
+  <meta property="og:site_name" content="GoodKit">
+  <script type="application/ld+json">${JSON.stringify({
+    '@context': 'https://schema.org',
+    '@type': 'CollectionPage',
+    name: `Used ${group.label} for Sale`,
+    description: group.desc,
+    url: canonicalUrl,
+    breadcrumb: {
+      '@type': 'BreadcrumbList',
+      itemListElement: [
+        { '@type': 'ListItem', position: 1, name: 'GoodKit', item: SITE_URL },
+        { '@type': 'ListItem', position: 2, name: 'Marketplace', item: `${SITE_URL}/marketplace` },
+        { '@type': 'ListItem', position: 3, name: group.label, item: canonicalUrl }
+      ]
+    },
+    mainEntity: { '@type': 'ItemList', itemListElement: itemListSchema }
+  })}</script>
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Space+Mono:wght@400;700&display=swap">
+  <style>
+    *{box-sizing:border-box;margin:0;padding:0}
+    body{background:#0a0a0a;color:#f0f0f0;font-family:'Space Mono',monospace;min-height:100vh}
+    .nav{background:#0a0a0a;border-bottom:2px solid #222;padding:0 24px;height:56px;display:flex;align-items:center;justify-content:space-between;position:sticky;top:0;z-index:10}
+    .nav-logo{font-size:20px;font-weight:700;text-decoration:none;color:#fff}
+    .nav-logo span{color:#FF5C1A}
+    .nav-cta{background:#FF5C1A;color:#fff;border:none;padding:8px 18px;border-radius:6px;font-family:inherit;font-size:13px;font-weight:700;cursor:pointer;text-decoration:none}
+    .hero{padding:40px 24px 32px;max-width:1100px;margin:0 auto}
+    .hero h1{font-size:28px;font-weight:700;margin-bottom:10px}
+    .hero p{color:#999;font-size:14px;line-height:1.7;font-family:system-ui,sans-serif;max-width:600px}
+    .cats{display:flex;flex-wrap:wrap;gap:6px;margin-top:16px}
+    .cat-tag{background:#1a1a1a;border:1px solid #333;border-radius:20px;padding:4px 12px;font-size:12px;color:#aaa}
+    .container{max-width:1100px;margin:0 auto;padding:0 24px 80px}
+    .count{font-size:13px;color:#666;margin-bottom:20px}
+    .grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(240px,1fr));gap:16px}
+    .card{background:#111;border:1px solid #222;border-radius:10px;overflow:hidden;text-decoration:none;color:inherit;display:block;transition:border-color .15s}
+    .card:hover{border-color:#FF5C1A}
+    .card-img{aspect-ratio:4/3;background:#1a1a1a;overflow:hidden}
+    .card-img img{width:100%;height:100%;object-fit:cover}
+    .no-img{width:100%;height:100%;display:flex;align-items:center;justify-content:center;font-size:2.5rem}
+    .card-body{padding:12px 14px 16px}
+    .card-title{font-size:13px;font-weight:700;margin-bottom:4px;line-height:1.4}
+    .card-meta{font-size:11px;color:#666;margin-bottom:6px}
+    .card-price{font-size:18px;font-weight:700;color:#FF5C1A}
+    .empty{text-align:center;padding:80px 24px;color:#555}
+    .other-cats{max-width:1100px;margin:0 auto;padding:0 24px 60px}
+    .other-cats h2{font-size:16px;font-weight:700;margin-bottom:16px;color:#888}
+    .cat-links{display:flex;flex-wrap:wrap;gap:8px}
+    .cat-link{background:#111;border:1px solid #222;border-radius:8px;padding:8px 16px;font-size:13px;text-decoration:none;color:#ccc;transition:border-color .15s}
+    .cat-link:hover{border-color:#FF5C1A;color:#fff}
+    footer{border-top:1px solid #1a1a1a;padding:24px;text-align:center;color:#555;font-size:12px}
+  </style>
+</head>
+<body>
+<nav class="nav">
+  <a class="nav-logo" href="${SITE_URL}">goodkit<span>.</span></a>
+  <a class="nav-cta" href="${SITE_URL}/marketplace">Shop All Gear</a>
+</nav>
+<div class="hero">
+  <h1>Used ${group.label} for Sale</h1>
+  <p>${group.desc}</p>
+  <div class="cats">${group.cats.map(c => `<span class="cat-tag">${c}</span>`).join('')}</div>
+</div>
+<div class="container">
+  <div class="count">${listings.length} listing${listings.length !== 1 ? 's' : ''} available</div>
+  ${listings.length ? `<div class="grid">${listingCards}</div>` : '<div class="empty"><h2>No listings yet in this category</h2><p>Check back soon or <a href="/sell" style="color:#FF5C1A">list your gear</a>.</p></div>'}
+</div>
+<div class="other-cats">
+  <h2>Browse Other Categories</h2>
+  <div class="cat-links">${CATEGORY_GROUPS.filter(g => g.slug !== group.slug).map(g => `<a class="cat-link" href="${SITE_URL}/gear/${g.slug}">${g.label}</a>`).join('')}</div>
+</div>
+<footer>© GoodKit · <a href="${SITE_URL}/marketplace" style="color:#FF5C1A">Marketplace</a> · <a href="${SITE_URL}/sell" style="color:#FF5C1A">Sell Your Gear</a></footer>
+</body>
+</html>`);
+});
+
+// Sitemap — includes all active listings + category pages
 app.get('/sitemap.xml', (req, res) => {
   try {
     const listings = db.prepare("SELECT id, title, created_at FROM listings WHERE status='approved' ORDER BY created_at DESC LIMIT 1000").all();
     const urls = [
       { loc: SITE_URL, priority: '1.0', changefreq: 'daily' },
       { loc: `${SITE_URL}/marketplace`, priority: '0.9', changefreq: 'hourly' },
+      ...CATEGORY_GROUPS.map(g => ({
+        loc: `${SITE_URL}/gear/${g.slug}`,
+        priority: '0.8',
+        changefreq: 'daily'
+      })),
       ...listings.map(l => ({
         loc: `${SITE_URL}/listing/${l.id}-${slugify(l.title)}`,
         lastmod: l.created_at.replace(' ', 'T').split('T')[0],
@@ -2338,11 +2510,13 @@ app.get('/shop/:slug/data', (req, res) => {
       `).all(session.email)
     : [];
 
-  // Parse photos JSON
+  // Parse photos JSON and build canonical slug for SEO links
   const formattedListings = listings.map(l => ({
     ...l,
+    price_cents: l.price,
     price: l.price / 100,
-    images: (() => { try { return JSON.parse(l.photos || '[]'); } catch(e) { return []; } })()
+    images: (() => { try { return JSON.parse(l.photos || '[]'); } catch(e) { return []; } })(),
+    canonical_slug: `${l.id}-${slugify(l.title)}`
   }));
 
   res.json({
@@ -2367,8 +2541,23 @@ app.get('/shop/:slug', (req, res) => {
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>${shop.shop_name} | GoodKit Gear</title>
-  <meta name="description" content="Shop quality used outdoor gear from ${shop.shop_name} on GoodKit.">
+  <title>Used Cycling Gear from ${shop.shop_name} | GoodKit</title>
+  <meta name="description" content="Buy used cycling gear from ${shop.shop_name} on GoodKit — quality consignment bikes and components, verified condition, fast shipping.">
+  <link rel="canonical" href="${SITE_URL}/shop/${shop.slug}">
+  <meta property="og:type" content="website">
+  <meta property="og:title" content="Used Cycling Gear from ${shop.shop_name}">
+  <meta property="og:description" content="Buy used cycling gear from ${shop.shop_name} on GoodKit — quality consignment bikes and components, verified condition, fast shipping.">
+  <meta property="og:url" content="${SITE_URL}/shop/${shop.slug}">
+  <meta property="og:site_name" content="GoodKit">
+  <script type="application/ld+json">${JSON.stringify({
+    '@context': 'https://schema.org',
+    '@type': 'LocalBusiness',
+    name: shop.shop_name,
+    url: `${SITE_URL}/shop/${shop.slug}`,
+    description: `Used cycling gear from ${shop.shop_name}, sold on GoodKit marketplace.`,
+    ...(shop.ship_city && shop.ship_state ? { address: { '@type': 'PostalAddress', addressLocality: shop.ship_city, addressRegion: shop.ship_state, addressCountry: 'US' } } : {}),
+    sameAs: [`${SITE_URL}/shop/${shop.slug}`]
+  })}</script>
   <style>
     *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
     :root {
@@ -2437,7 +2626,7 @@ app.get('/shop/:slug', (req, res) => {
           const cond = l.condition ? \`<span class="badge">\${l.condition}</span>\` : '';
           return \`
             <div class="card">
-              <a href="/listing/\${l.id}">
+              <a href="/listing/\${l.canonical_slug || l.id}">
                 <div class="card-img">\${img}</div>
                 <div class="card-body">
                   <div class="card-title">\${l.title}\${cond}</div>
