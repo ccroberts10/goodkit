@@ -108,12 +108,18 @@ nav{position:sticky;top:0;z-index:100;background:var(--ink);display:flex;align-i
 .pane{display:none;}
 .pane.active{display:block;}
 /* LISTINGS */
-.listing-row{display:flex;align-items:center;gap:12px;padding:12px 0;border-bottom:1px solid var(--border);}
+.listing-row{display:flex;align-items:center;gap:12px;padding:12px 0;border-bottom:1px solid var(--border);flex-wrap:wrap;}
 .listing-info{flex:1;min-width:0;}
 .listing-title{font-size:14px;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
-.listing-meta{font-size:12px;color:var(--muted);}
+.listing-meta{font-size:12px;color:var(--muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
 .listing-price{font-family:var(--mono);font-size:16px;color:var(--ink);flex-shrink:0;}
-.listing-actions{display:flex;gap:6px;flex-shrink:0;}
+.listing-actions{display:flex;gap:6px;flex-shrink:0;flex-wrap:wrap;}
+@media(max-width:500px){
+  .listing-row{align-items:flex-start;}
+  .listing-price{display:none;}
+  .listing-actions{width:100%;padding-left:64px;margin-top:4px;}
+  .listing-actions .listing-price-inline{display:inline;font-family:var(--mono);font-size:14px;font-weight:700;color:var(--ink);margin-right:auto;}
+}
 .status-badge{display:inline-block;font-size:10px;font-weight:600;letter-spacing:0.07em;text-transform:uppercase;padding:2px 7px;border-radius:4px;}
 .badge-active{background:rgba(26,107,26,0.1);color:#1a6b1a;}
 .badge-sold{background:rgba(17,17,17,0.08);color:var(--ink-soft);}
@@ -672,6 +678,7 @@ function renderListings(listings){
       </div>
       <div class="listing-price">$${Number(l.price).toFixed(0)}</div>
       <div class="listing-actions">
+        <span class="listing-price-inline">$${Number(l.price).toFixed(0)}</span>
         <button class="btn btn-outline btn-xs" onclick="toggleEdit('${l.id}',${Number(l.price).toFixed(2)},'${(l.category||'').replace(/'/g,"\\'")}','${(l.size||'').replace(/'/g,"\\'")}','${(l.title||'').replace(/'/g,"\\'")}')">Edit</button>
         ${l.status==='approved'?`<button class="btn btn-outline btn-xs" onclick="openShareModal('${l.id}','${(l.title||'').replace(/'/g,"\\'")}',${Number(l.price).toFixed(2)},'${l.photos&&l.photos.length?l.photos[0]:''}','${(l.condition||'').replace(/'/g,"\\'")}')">Share</button>`:''}
         ${l.status==='approved'?`<button class="btn btn-warning btn-xs" onclick="markSoldElsewhere('${l.id}','${(l.title||'').replace(/'/g,"\\'")}')">Sold Elsewhere</button>`:''}
