@@ -672,7 +672,7 @@ function renderListings(listings){
       </div>
       <div class="listing-price">$${Number(l.price).toFixed(0)}</div>
       <div class="listing-actions">
-        <button class="btn btn-outline btn-xs" onclick="toggleEdit('${l.id}',${Number(l.price).toFixed(2)},'${(l.category||'').replace(/'/g,"\\'")}','${(l.size||'').replace(/'/g,"\\'")}')">Edit</button>
+        <button class="btn btn-outline btn-xs" onclick="toggleEdit('${l.id}',${Number(l.price).toFixed(2)},'${(l.category||'').replace(/'/g,"\\'")}','${(l.size||'').replace(/'/g,"\\'")}','${(l.title||'').replace(/'/g,"\\'")}')">Edit</button>
         ${l.status==='approved'?`<button class="btn btn-outline btn-xs" onclick="openShareModal('${l.id}','${(l.title||'').replace(/'/g,"\\'")}',${Number(l.price).toFixed(2)},'${l.photos&&l.photos.length?l.photos[0]:''}','${(l.condition||'').replace(/'/g,"\\'")}')">Share</button>`:''}
         ${l.status==='approved'?`<button class="btn btn-warning btn-xs" onclick="markSoldElsewhere('${l.id}','${(l.title||'').replace(/'/g,"\\'")}')">Sold Elsewhere</button>`:''}
         ${l.status==='expired'?`<button class="btn btn-primary btn-xs" onclick="relistListing('${l.id}','${(l.title||'').replace(/'/g,"\\'")}')">Relist</button>`:''}
@@ -680,6 +680,10 @@ function renderListings(listings){
       </div>
     </div>
     <div id="edit-${l.id}" style="display:none;padding:10px 0 14px 64px;border-bottom:1px solid var(--border);">
+      <div style="margin-bottom:8px;">
+        <div class="form-label" style="margin-bottom:4px;">Title</div>
+        <input class="form-input" type="text" id="et-${l.id}" value="${(l.title||'').replace(/"/g,'&quot;')}" style="width:100%;max-width:480px;">
+      </div>
       <div style="display:flex;gap:8px;align-items:flex-end;flex-wrap:wrap;">
         <div>
           <div class="form-label" style="margin-bottom:4px;">Price ($)</div>
@@ -777,14 +781,16 @@ function updateEditSize(id){
   }
 }
 
-function toggleEdit(id, price, cat, size){
+function toggleEdit(id, price, cat, size, title){
   const el=document.getElementById('edit-'+id);
   const open=el.style.display==='none';
   document.querySelectorAll('[id^="edit-"]').forEach(e=>e.style.display='none');
   if(open){
     el.style.display='block';
+    const ti=document.getElementById('et-'+id);
     const pi=document.getElementById('ep-'+id);
     const ci=document.getElementById('ec-'+id);
+    if(ti&&title) ti.value=title;
     if(pi) pi.value=price;
     if(ci){
       [...ci.options].forEach(o=>{ o.selected=(o.value===cat||o.text===cat); });
@@ -797,13 +803,15 @@ function toggleEdit(id, price, cat, size){
 }
 
 async function saveListing(id){
+  const title=document.getElementById('et-'+id)?.value?.trim();
   const price=document.getElementById('ep-'+id)?.value;
   const category=document.getElementById('ec-'+id)?.value;
   const size=document.getElementById('esv-'+id)?.value||'';
   const keywords=document.getElementById('ek-'+id)?.value||'';
+  if(!title){showToast('Title cannot be empty','error');return;}
   if(!price||Number(price)<1){showToast('Enter a valid price','error');return;}
   try{
-    const r=await fetch(API+'/listings/'+id,{method:'PATCH',headers:{'Content-Type':'application/json'},body:JSON.stringify({token:SESSION,price:Number(price),category,size,keywords})});
+    const r=await fetch(API+'/listings/'+id,{method:'PATCH',headers:{'Content-Type':'application/json'},body:JSON.stringify({token:SESSION,title,price:Number(price),category,size,keywords})});
     const d=await r.json();
     if(!r.ok)throw new Error(d.error||'Error');
     showToast('Listing updated');
