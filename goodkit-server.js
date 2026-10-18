@@ -1172,7 +1172,7 @@ app.post('/checkout', async (req, res) => {
     const paymentIntent = await stripe.paymentIntents.create(piParams);
 
     const saleId = uuidv4();
-    const payoutAfter = new Date(Date.now() + 72 * 60 * 60 * 1000).toISOString();
+    const payoutAfter = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString(); // 7 days from purchase; updated to delivery+48h when carrier confirms
     db.prepare(`INSERT INTO sales (id,listing_id,buyer_email,buyer_name,buyer_street1,buyer_city,buyer_state,buyer_zip,payment_intent_id,amount,seller_payout,platform_payout,delivery_type,label_tier,ccx_code,ccx_fund,payout_after) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`)
       .run(saleId, listingId, buyerEmail,
         buyerName || '', buyerStreet1 || '', buyerCity || '', buyerState || '', buyerZip || '',
@@ -1411,7 +1411,7 @@ app.post('/webhook', async (req, res) => {
     const listingId = pi.metadata.listingId;
 
     db.prepare("UPDATE listings SET status='sold', sold_at=datetime('now') WHERE id=?").run(listingId);
-    db.prepare("UPDATE sales SET status='delivered' WHERE payment_intent_id=?").run(pi.id);
+    db.prepare("UPDATE sales SET status='pending_shipment' WHERE payment_intent_id=?").run(pi.id);
 
     // CCX fund credit — if listing had a ccx_code, credit the team fund
     const saleForCcx = db.prepare("SELECT ccx_code, ccx_fund FROM sales WHERE payment_intent_id=?").get(pi.id);
@@ -1530,12 +1530,12 @@ app.post('/webhook', async (req, res) => {
            <p style="font-size:13px;color:#888;margin:0 0 4px;">Your payout</p>
            <p style="font-size:28px;font-weight:700;color:#1A1A14;margin:0;">$${(sale.seller_payout/100).toFixed(2)}</p>
            ${sellerLabelSection}
-           <p style="font-size:12px;color:#888;margin:8px 0 0;">Payout transferred automatically 72 hours after delivery confirmation.</p>
+           <p style="font-size:12px;color:#888;margin:8px 0 0;">Payout released 48 hours after delivery confirmation (or 7 days from purchase if tracking isn't updated).</p>
          </div>`
       ));
 
       // Email buyer — purchase confirmation with buyer protection notice
-      const payoutAfterDate = new Date(Date.now() + 72 * 60 * 60 * 1000);
+      const payoutAfterDate = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000);
       const protectionDeadline = payoutAfterDate.toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric', hour: 'numeric', minute: '2-digit', timeZoneName: 'short' });
       const flagUrl = `${process.env.SITE_URL || 'https://good-kit.com'}/flag-purchase?sale=${sale.id}&email=${encodeURIComponent(sale.buyer_email)}`;
       const buyerPickupNote = isPickup
@@ -1557,7 +1557,7 @@ app.post('/webhook', async (req, res) => {
          </div>
          <div style="background:#EBF4EF;border:1px solid #1D5C3A;padding:16px 20px;margin-bottom:20px;">
            <p style="font-size:14px;font-weight:700;color:#1D5C3A;margin:0 0 8px;">🛡️ GoodKit Buyer Protection</p>
-           <p style="font-size:13px;color:#333;margin:0 0 8px;">The seller's payout is held for <strong>72 hours</strong> after your purchase. If the item doesn't arrive, isn't as described, or something is wrong — flag it before <strong>${protectionDeadline}</strong> and we'll step in.</p>
+           <p style="font-size:13px;color:#333;margin:0 0 8px;">The seller's payout is held until <strong>48 hours after delivery</strong>. If the item doesn't arrive, isn't as described, or something is wrong — flag it before <strong>${protectionDeadline}</strong> and we'll step in.</p>
            <a href="${flagUrl}" style="display:inline-block;background:#1D5C3A;color:white;padding:10px 20px;font-size:13px;font-weight:600;text-decoration:none;">Report a Problem →</a>
          </div>
          <p style="font-size:12px;color:#888;margin:0;">Questions? Reply to this email and we'll help.</p>`
@@ -1847,11 +1847,11 @@ app.post('/admin/release-payouts', async (req, res) => {
     const pending = db.prepare(`
       SELECT s.*, l.stripe_account_id FROM sales s
       JOIN listings l ON s.listing_id = l.id
-      WHERE s.status = 'delivered'
+      WHERE s.status IN ('delivered', 'pending_shipment')
         AND s.buyer_flagged = 0
         AND (
           (s.payout_after IS NOT NULL AND s.payout_after <= ?)
-          OR (s.payout_after IS NULL AND s.created_at <= datetime(?, '-72 hours'))
+          OR (s.payout_after IS NULL AND s.created_at <= datetime(?, '-7 days'))
         )
     `).all(now, now);
     let released = 0;
@@ -1862,7 +1862,7 @@ app.post('/admin/release-payouts', async (req, res) => {
       } catch(err) { console.error('Payout error', sale.id, err.message); }
     }
     // Count how many are held due to disputes
-    const flagged = db.prepare("SELECT COUNT(*) as n FROM sales WHERE status='delivered' AND buyer_flagged=1").get().n;
+    const flagged = db.prepare("SELECT COUNT(*) as n FROM sales WHERE status IN ('delivered','pending_shipment') AND buyer_flagged=1").get().n;
     res.json({ success: true, released, held_for_dispute: flagged });
   } catch(err) { res.status(500).json({ error: err.message }); }
 });
