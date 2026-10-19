@@ -228,8 +228,8 @@ nav{position:sticky;top:0;z-index:100;background:var(--ink);display:flex;align-i
 
 <!-- LISTING MODAL -->
 <div class="modal-overlay" id="listingModal">
-  <div class="modal modal-detail" style="position:relative;">
-    <button class="modal-close" onclick="closeModal()" style="position:fixed;top:18px;right:18px;z-index:300;">✕</button>
+  <div class="modal modal-detail" style="position:relative;overflow:visible;">
+    <button class="modal-close" onclick="closeModal()" style="position:absolute;top:-12px;right:-12px;z-index:400;background:var(--ink);color:#fff;width:32px;height:32px;border-radius:50%;border:none;font-size:16px;cursor:pointer;display:flex;align-items:center;justify-content:center;box-shadow:0 2px 8px rgba(0,0,0,0.4);">✕</button>
     <div class="modal-layout">
       <div class="photo-gallery" id="modalGallery"><div class="modal-photo-ph" style="width:100%;aspect-ratio:1;display:flex;align-items:center;justify-content:center;font-size:64px;color:var(--border);">🚴</div></div>
       <div class="modal-body" id="modalBody"></div>
