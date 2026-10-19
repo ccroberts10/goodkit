@@ -130,6 +130,14 @@ body{font-family:'ABC Maxi Round','Nunito',system-ui,sans-serif;background:var(-
 .hero-photo-slide.active{opacity:0.55;}
 .hero-photo-slide:nth-child(1){background-image:url('/hero-bike-2.jpg');background-position:center 30%;}
 .hero-photo-slide:nth-child(2){background-image:url('/hero-bike-3.jpg');background-position:center 45%;}
+.hero-photo-slide:nth-child(3){background-image:url('/hero-bike-4.jpg');background-position:center 40%;}
+.hero-photo-slide:nth-child(4){background-image:url('/hero-bike-5.jpg');background-position:center 40%;}
+.hero-photo-slide:nth-child(5){background-image:url('/hero-bike-6.jpg');background-position:center 35%;}
+.hero-photo-slide:nth-child(6){background-image:url('/hero-bike-7.jpg');background-position:center 40%;}
+.hero-photo-slide:nth-child(7){background-image:url('/hero-bike-8.jpg');background-position:center 50%;}
+.hero-photo-slide:nth-child(8){background-image:url('/hero-bike-9.jpg');background-position:center 50%;}
+.hero-photo-slide:nth-child(9){background-image:url('/hero-bike-10.jpg');background-position:center 40%;}
+.manifesto-bg{position:absolute;inset:0;background-size:cover;background-position:center 40%;opacity:0.12;z-index:0;}
 .hero-photo::after{content:'';position:absolute;inset:0;z-index:1;background:linear-gradient(to bottom, rgba(10,10,10,0.2) 0%, rgba(10,10,10,0.1) 35%, rgba(10,10,10,0.65) 65%, #0a0a0a 100%);}
 .hero-bg-text{position:absolute;top:50%;left:50%;transform:translate(-50%,-50%);font-family:'ABC Maxi Round','Nunito',system-ui,sans-serif;font-weight:900;font-size:clamp(140px,25vw,380px);text-transform:uppercase;letter-spacing:-0.04em;line-height:1;color:rgba(255,255,255,0.025);white-space:nowrap;pointer-events:none;user-select:none;}
 .hero-inner{position:relative;z-index:1;max-width:800px;}
@@ -231,6 +239,13 @@ footer{background:#0a0a0a;padding:40px 24px;display:flex;flex-direction:column;a
 <section class="hero">
   <div class="hero-photo">
     <div class="hero-photo-slide active"></div>
+    <div class="hero-photo-slide"></div>
+    <div class="hero-photo-slide"></div>
+    <div class="hero-photo-slide"></div>
+    <div class="hero-photo-slide"></div>
+    <div class="hero-photo-slide"></div>
+    <div class="hero-photo-slide"></div>
+    <div class="hero-photo-slide"></div>
     <div class="hero-photo-slide"></div>
   </div>
   <div class="hero-bg-text">GK</div>
@@ -377,8 +392,9 @@ footer{background:#0a0a0a;padding:40px 24px;display:flex;flex-direction:column;a
   </div>
 </section>
 
-<section class="section section-dark">
-  <div class="inner">
+<section class="section section-dark" style="position:relative;overflow:hidden;">
+  <div class="manifesto-bg" style="background-image:url('/hero-bike-6.jpg');"></div>
+  <div class="inner" style="position:relative;z-index:1;">
     <div class="manifesto-text">bikes are for fun.<br><em>not for bragging.</em></div>
     <div class="manifesto-points">
       <p class="manifesto-point">You don't need the nicest helmet or the newest frame. You need a bike that fits, gear that works, and somewhere to ride.</p>
@@ -439,12 +455,14 @@ loadRecent();
 </script><script>
 (function(){
   const slides=document.querySelectorAll('.hero-photo-slide');
-  let cur=0;
+  slides[0].classList.remove('active');
+  let cur=Math.floor(Math.random()*slides.length);
+  slides[cur].classList.add('active');
   setInterval(()=>{
     slides[cur].classList.remove('active');
     cur=(cur+1)%slides.length;
     slides[cur].classList.add('active');
-  },5000);
+  },5500);
 })();
 </script><script>if("serviceWorker"in navigator){navigator.serviceWorker.register("/sw.js");}</script>
 </body>
