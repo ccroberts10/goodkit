@@ -437,6 +437,16 @@ db.exec(`
     joined_at TEXT DEFAULT (datetime('now')),
     UNIQUE(community_id, email)
   );
+  CREATE TABLE IF NOT EXISTS listing_action_tokens (
+    id TEXT PRIMARY KEY,
+    listing_id TEXT NOT NULL,
+    seller_email TEXT NOT NULL,
+    action TEXT NOT NULL,
+    token TEXT NOT NULL UNIQUE,
+    expires_at TEXT NOT NULL,
+    used INTEGER DEFAULT 0,
+    created_at TEXT DEFAULT (datetime('now'))
+  );
 `);
 
 // Migrations for existing DBs
@@ -805,7 +815,8 @@ IMPORTANT: Return raw JSON only — no markdown, no code fences, no explanation.
 app.get('/', (req, res) => res.sendFile(path.join(__dirname, 'index.html')));
 app.get('/shop', (req, res) => res.sendFile(path.join(__dirname, 'goodkit-marketplace.html')));
 app.get('/marketplace', (req, res) => res.sendFile(path.join(__dirname, 'goodkit-marketplace.html')));
-app.get('/sell', (req, res) => res.sendFile(path.join(__dirname, 'goodkit-seller-portal.html')));
+app.get('/sell',          (req, res) => res.sendFile(path.join(__dirname, 'goodkit-seller-portal.html')));
+app.get('/seller-portal', (req, res) => res.sendFile(path.join(__dirname, 'goodkit-seller-portal.html')));
 app.get('/health', (req, res) => res.json({ status: 'GoodKit Marketplace running' }));
 
 // Seller onboarding via Stripe Connect Express
@@ -915,6 +926,93 @@ function handleVerifyToken(req, res) {
 }
 app.get('/seller/verify-token', handleVerifyToken);
 app.get('/seller/auth/verify',  handleVerifyToken);
+
+// One-click listing actions from lifecycle emails
+app.get('/listing/action', async (req, res) => {
+  try {
+    const { token } = req.query;
+    if (!token) return res.status(400).send('Missing token');
+
+    const row = db.prepare("SELECT * FROM listing_action_tokens WHERE token = ? AND used = 0").get(token);
+    if (!row) return res.status(410).send(`
+      <html><body style="font-family:sans-serif;text-align:center;padding:60px 20px;">
+        <h2>Link expired or already used</h2>
+        <p>Visit <a href="https://good-kit.com/sell">your seller portal</a> to manage your listings.</p>
+      </body></html>
+    `);
+    if (new Date(row.expires_at) < new Date()) {
+      return res.status(410).send(`
+        <html><body style="font-family:sans-serif;text-align:center;padding:60px 20px;">
+          <h2>This link has expired</h2>
+          <p>Visit <a href="https://good-kit.com/sell">your seller portal</a> to manage your listings.</p>
+        </body></html>
+      `);
+    }
+
+    // Mark token used
+    db.prepare("UPDATE listing_action_tokens SET used = 1 WHERE token = ?").run(token);
+
+    const listing = db.prepare("SELECT * FROM listings WHERE id = ?").get(row.listing_id);
+    const action  = row.action;
+
+    if (action === 'still_available') {
+      // Bump reminded_at so lifecycle doesn't re-nudge, extend expiry by 30 days
+      const newExpiry = new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString();
+      db.prepare("UPDATE listings SET reminded_at = ?, expires_at = ? WHERE id = ?")
+        .run(new Date().toISOString(), newExpiry, row.listing_id);
+    } else if (action === 'mark_sold') {
+      db.prepare("UPDATE listings SET status = 'sold_elsewhere', deactivated_at = ? WHERE id = ?")
+        .run(new Date().toISOString(), row.listing_id);
+    }
+    // 'lower_price' just sends them to the portal — no server action needed
+
+    // Issue a fresh magic-link session so seller lands logged in
+    const sessionToken  = uuidv4();
+    const sessionExpiry = new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString();
+    db.prepare("INSERT INTO seller_sessions (id, email, token, role, expires_at, used) VALUES (?, ?, ?, 'seller', ?, 1)")
+      .run(uuidv4(), row.seller_email, sessionToken, sessionExpiry);
+
+    const messages = {
+      still_available: `✓ Great! Your listing for <strong>${listing ? listing.title : 'your item'}</strong> has been refreshed for another 30 days.`,
+      lower_price:     `Use the portal to update the price on your listing.`,
+      mark_sold:       `Your listing for <strong>${listing ? listing.title : 'your item'}</strong> has been marked as sold. Nice work!`
+    };
+    const portalUrl = `https://good-kit.com/seller-portal?token=${sessionToken}`;
+
+    res.send(`
+      <html>
+      <head>
+        <meta charset="utf-8">
+        <meta name="viewport" content="width=device-width,initial-scale=1">
+        <title>GoodKit</title>
+        <style>
+          body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;background:#f8f8f5;display:flex;align-items:center;justify-content:center;min-height:100vh;margin:0;padding:20px;box-sizing:border-box;}
+          .card{background:#fff;border-radius:12px;padding:40px 32px;max-width:420px;width:100%;text-align:center;box-shadow:0 2px 16px rgba(0,0,0,0.08);}
+          .icon{font-size:48px;margin-bottom:16px;}
+          h2{margin:0 0 12px;font-size:22px;color:#1a1a14;}
+          p{color:#666;font-size:15px;line-height:1.6;margin:0 0 24px;}
+          a.btn{display:inline-block;background:#FF5C1A;color:#fff;padding:14px 28px;border-radius:8px;text-decoration:none;font-weight:600;font-size:15px;}
+          .logo{font-size:13px;color:#aaa;margin-top:24px;}
+        </style>
+        <meta http-equiv="refresh" content="4; url=${portalUrl}">
+      </head>
+      <body>
+        <div class="card">
+          <div class="icon">${action === 'still_available' ? '✅' : action === 'mark_sold' ? '🎉' : '💲'}</div>
+          <h2>${action === 'still_available' ? 'Listing refreshed!' : action === 'mark_sold' ? 'Marked as sold!' : 'Update your price'}</h2>
+          <p>${messages[action] || ''}</p>
+          <p style="font-size:13px;color:#aaa;margin-bottom:16px;">Taking you to your portal in a moment…</p>
+          <a class="btn" href="${portalUrl}">Go to Seller Portal →</a>
+          <div class="logo">GoodKit · good-kit.com</div>
+        </div>
+      </body>
+      </html>
+    `);
+  } catch(err) {
+    console.error('[listing/action]', err);
+    res.status(500).send('Something went wrong. Please visit <a href="https://good-kit.com/sell">good-kit.com/sell</a>.');
+  }
+});
 
 app.get('/seller/portal', (req, res) => {
   try {
@@ -3497,14 +3595,23 @@ async function runListingLifecycle() {
     for (const l of toWarn) {
       db.prepare("UPDATE listings SET final_warned_at=? WHERE id=?").run(new Date().toISOString(), l.id);
       const price = (l.price / 100).toFixed(0);
-      const portal = `https://good-kit.com/seller`;
+      const tokenExpiry = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString();
+      const mkActionUrl = (action) => {
+        const t = uuidv4();
+        db.prepare("INSERT INTO listing_action_tokens (id, listing_id, seller_email, action, token, expires_at) VALUES (?, ?, ?, ?, ?, ?)")
+          .run(uuidv4(), l.id, l.seller_email, action, t, tokenExpiry);
+        return `${BASE_URL}/listing/action?token=${t}`;
+      };
+      const urlKeep  = mkActionUrl('still_available');
+      const urlLower = mkActionUrl('lower_price');
+      const urlSold  = mkActionUrl('mark_sold');
       await sendEmail(l.seller_email, `Your listing expires in 48 hours: ${l.title}`, emailTemplate('Listing Expires Soon ⏰', `
         <p style="font-size:15px;color:#444;margin:0 0 8px;">Your listing for <strong>${l.title}</strong> will automatically deactivate in <strong>48 hours</strong>.</p>
         <p style="font-size:15px;color:#444;margin:0 0 20px;">Tap below to keep it live, lower the price, or mark it sold.</p>
         <div style="display:flex;flex-direction:column;gap:10px;max-width:300px;">
-          <a href="${portal}" style="display:block;background:#1a7a3a;color:#fff;font-weight:700;padding:12px 20px;border-radius:8px;text-decoration:none;font-size:15px;text-align:center;">Keep It Live</a>
-          <a href="${portal}" style="display:block;background:#f0f0f0;color:#333;font-weight:600;padding:12px 20px;border-radius:8px;text-decoration:none;font-size:15px;text-align:center;">Lower the Price</a>
-          <a href="${portal}" style="display:block;background:#fff;border:1px solid #ddd;color:#888;font-weight:500;padding:12px 20px;border-radius:8px;text-decoration:none;font-size:15px;text-align:center;">Mark as Sold</a>
+          <a href="${urlKeep}"  style="display:block;background:#1a7a3a;color:#fff;font-weight:700;padding:12px 20px;border-radius:8px;text-decoration:none;font-size:15px;text-align:center;">Keep It Live</a>
+          <a href="${urlLower}" style="display:block;background:#f0f0f0;color:#333;font-weight:600;padding:12px 20px;border-radius:8px;text-decoration:none;font-size:15px;text-align:center;">Lower the Price</a>
+          <a href="${urlSold}"  style="display:block;background:#fff;border:1px solid #ddd;color:#888;font-weight:500;padding:12px 20px;border-radius:8px;text-decoration:none;font-size:15px;text-align:center;">Mark as Sold</a>
         </div>
         <p style="font-size:12px;color:#aaa;margin:20px 0 0;">Listed at $${price} · ${l.category || 'Cycling gear'}</p>
       `));
@@ -3522,14 +3629,23 @@ async function runListingLifecycle() {
     for (const l of toNudge) {
       db.prepare("UPDATE listings SET reminded_at=? WHERE id=?").run(new Date().toISOString(), l.id);
       const price = (l.price / 100).toFixed(0);
-      const portal = `https://good-kit.com/seller`;
+      const tokenExpiry = new Date(Date.now() + 14 * 24 * 60 * 60 * 1000).toISOString();
+      const mkActionUrl = (action) => {
+        const t = uuidv4();
+        db.prepare("INSERT INTO listing_action_tokens (id, listing_id, seller_email, action, token, expires_at) VALUES (?, ?, ?, ?, ?, ?)")
+          .run(uuidv4(), l.id, l.seller_email, action, t, tokenExpiry);
+        return `${BASE_URL}/listing/action?token=${t}`;
+      };
+      const urlAvail = mkActionUrl('still_available');
+      const urlLower = mkActionUrl('lower_price');
+      const urlSold  = mkActionUrl('mark_sold');
       await sendEmail(l.seller_email, `Still available? Your GoodKit listing: ${l.title}`, emailTemplate('Still Available?', `
         <p style="font-size:15px;color:#444;margin:0 0 6px;">Your <strong>${l.title}</strong> has been listed for 3 weeks at <strong>$${price}</strong>.</p>
         <p style="font-size:15px;color:#444;margin:0 0 20px;">Is it still available? A quick update keeps your listing active and helps buyers know what's current.</p>
         <div style="display:flex;flex-direction:column;gap:10px;max-width:300px;">
-          <a href="${portal}" style="display:block;background:#1a7a3a;color:#fff;font-weight:700;padding:12px 20px;border-radius:8px;text-decoration:none;font-size:15px;text-align:center;">✓ Still Available</a>
-          <a href="${portal}" style="display:block;background:#f5f5f5;color:#333;font-weight:600;padding:12px 20px;border-radius:8px;text-decoration:none;font-size:15px;text-align:center;">💲 Lower the Price</a>
-          <a href="${portal}" style="display:block;background:#fff;border:1px solid #ddd;color:#888;font-weight:500;padding:12px 20px;border-radius:8px;text-decoration:none;font-size:15px;text-align:center;">✗ Mark as Sold</a>
+          <a href="${urlAvail}" style="display:block;background:#1a7a3a;color:#fff;font-weight:700;padding:12px 20px;border-radius:8px;text-decoration:none;font-size:15px;text-align:center;">✓ Still Available</a>
+          <a href="${urlLower}" style="display:block;background:#f5f5f5;color:#333;font-weight:600;padding:12px 20px;border-radius:8px;text-decoration:none;font-size:15px;text-align:center;">💲 Lower the Price</a>
+          <a href="${urlSold}"  style="display:block;background:#fff;border:1px solid #ddd;color:#888;font-weight:500;padding:12px 20px;border-radius:8px;text-decoration:none;font-size:15px;text-align:center;">✗ Mark as Sold</a>
         </div>
         <p style="font-size:12px;color:#aaa;margin:20px 0 0;">Listing auto-deactivates in 9 days if no action is taken.</p>
       `));
