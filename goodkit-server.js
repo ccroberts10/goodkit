@@ -963,6 +963,10 @@ app.get('/listing/action', async (req, res) => {
     } else if (action === 'mark_sold') {
       db.prepare("UPDATE listings SET status = 'sold_elsewhere', deactivated_at = ? WHERE id = ?")
         .run(new Date().toISOString(), row.listing_id);
+    } else if (action === 'reactivate') {
+      const newExpiry = new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString();
+      db.prepare("UPDATE listings SET status = 'approved', reminded_at = NULL, final_warned_at = NULL, expires_at = ?, deactivated_at = NULL WHERE id = ?")
+        .run(newExpiry, row.listing_id);
     }
     // 'lower_price' just sends them to the portal — no server action needed
 
@@ -975,7 +979,8 @@ app.get('/listing/action', async (req, res) => {
     const messages = {
       still_available: `✓ Great! Your listing for <strong>${listing ? listing.title : 'your item'}</strong> has been refreshed for another 30 days.`,
       lower_price:     `Use the portal to update the price on your listing.`,
-      mark_sold:       `Your listing for <strong>${listing ? listing.title : 'your item'}</strong> has been marked as sold. Nice work!`
+      mark_sold:       `Your listing for <strong>${listing ? listing.title : 'your item'}</strong> has been marked as sold. Nice work!`,
+      reactivate:      `✓ Your listing for <strong>${listing ? listing.title : 'your item'}</strong> has been reactivated for another 30 days.`
     };
     const portalUrl = `https://good-kit.com/seller-portal?token=${sessionToken}`;
 
@@ -998,8 +1003,8 @@ app.get('/listing/action', async (req, res) => {
       </head>
       <body>
         <div class="card">
-          <div class="icon">${action === 'still_available' ? '✅' : action === 'mark_sold' ? '🎉' : '💲'}</div>
-          <h2>${action === 'still_available' ? 'Listing refreshed!' : action === 'mark_sold' ? 'Marked as sold!' : 'Update your price'}</h2>
+          <div class="icon">${action === 'still_available' || action === 'reactivate' ? '✅' : action === 'mark_sold' ? '🎉' : '💲'}</div>
+          <h2>${action === 'still_available' ? 'Listing refreshed!' : action === 'reactivate' ? 'Listing reactivated!' : action === 'mark_sold' ? 'Marked as sold!' : 'Update your price'}</h2>
           <p>${messages[action] || ''}</p>
           <p style="font-size:13px;color:#aaa;margin-bottom:16px;">Taking you to your portal in a moment…</p>
           <a class="btn" href="${portalUrl}">Go to Seller Portal →</a>
@@ -2651,7 +2656,7 @@ app.post('/admin/shops/create', async (req, res) => {
     VALUES (?, ?, ?, datetime('now'), 1, 'shop', ?)
   `).run(uuidv4(), sessionToken, contact_email, slug);
 
-  const loginLink = `${SITE_URL}/seller?token=${sessionToken}`;
+  const loginLink = `${SITE_URL}/sell?token=${sessionToken}`;
 
   // Send welcome email
   try {
@@ -3151,7 +3156,7 @@ app.post('/admin/pro-athletes/create', async (req, res) => {
     VALUES (?, ?, ?, datetime('now'), 1, 'pro_athlete', ?)
   `).run(uuidv4(), sessionToken, contact_email, slug);
 
-  const loginLink = `${SITE_URL}/seller?token=${sessionToken}`;
+  const loginLink = `${SITE_URL}/sell?token=${sessionToken}`;
 
   try {
     await sendPartnerWelcome({ to: contact_email, recipientName: contact_name, entityName: athlete_name, entityType: 'pro_athlete', loginLink });
@@ -3575,10 +3580,15 @@ async function runListingLifecycle() {
     for (const l of toExpire) {
       db.prepare("UPDATE listings SET status='expired' WHERE id=?").run(l.id);
       const price = (l.price / 100).toFixed(0);
+      const reactivateTokenExpiry = new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString();
+      const reactivateToken = uuidv4();
+      db.prepare("INSERT INTO listing_action_tokens (id, listing_id, seller_email, action, token, expires_at) VALUES (?, ?, ?, ?, ?, ?)")
+        .run(uuidv4(), l.id, l.seller_email, 'reactivate', reactivateToken, reactivateTokenExpiry);
+      const reactivateUrl = `${BASE_URL}/listing/action?token=${reactivateToken}`;
       await sendEmail(l.seller_email, `Your GoodKit listing expired: ${l.title}`, emailTemplate('Listing Expired', `
         <p style="font-size:15px;color:#444;margin:0 0 16px;">Your listing for <strong>${l.title}</strong> ($${price}) was automatically deactivated after 30 days.</p>
         <p style="font-size:15px;color:#444;margin:0 0 20px;">If it's still available, you can reactivate it anytime from your seller dashboard — it takes one click.</p>
-        <a href="https://good-kit.com/seller" style="display:inline-block;background:#1a7a3a;color:#fff;font-weight:700;padding:12px 28px;border-radius:8px;text-decoration:none;font-size:15px;">Reactivate Listing</a>
+        <a href="${reactivateUrl}" style="display:inline-block;background:#1a7a3a;color:#fff;font-weight:700;padding:12px 28px;border-radius:8px;text-decoration:none;font-size:15px;">Reactivate Listing</a>
       `));
       console.log(`[lifecycle] expired listing ${l.id}: ${l.title}`);
     }
