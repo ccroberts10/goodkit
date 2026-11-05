@@ -449,6 +449,20 @@ db.exec(`
   );
 `);
 
+// Ensure listing_action_tokens table exists (belt-and-suspenders for existing DBs)
+db.exec(`
+  CREATE TABLE IF NOT EXISTS listing_action_tokens (
+    id TEXT PRIMARY KEY,
+    listing_id TEXT NOT NULL,
+    seller_email TEXT NOT NULL,
+    action TEXT NOT NULL,
+    token TEXT NOT NULL UNIQUE,
+    expires_at TEXT NOT NULL,
+    used INTEGER DEFAULT 0,
+    created_at TEXT DEFAULT (datetime('now'))
+  );
+`);
+
 // Migrations for existing DBs
 [
   `ALTER TABLE listings ADD COLUMN community_id TEXT DEFAULT NULL`,
@@ -1014,8 +1028,8 @@ app.get('/listing/action', async (req, res) => {
       </html>
     `);
   } catch(err) {
-    console.error('[listing/action]', err);
-    res.status(500).send('Something went wrong. Please visit <a href="https://good-kit.com/sell">good-kit.com/sell</a>.');
+    console.error('[listing/action] ERROR:', err.message, err.stack);
+    res.status(500).send(`Something went wrong (${err.message}). Please visit <a href="https://good-kit.com/sell">good-kit.com/sell</a>.`);
   }
 });
 
