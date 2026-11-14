@@ -514,7 +514,11 @@ function openCheckout(){
         <button class="btn btn-primary" style="width:100%;justify-content:center;padding:12px;font-size:15px;" onclick="submitCheckout()" id="payBtn" data-secret="">Pay $${total}</button>
         <div class="modal-fine">Secured by Stripe${isPickup?' · Seller arranges pickup in Durango':' · Prepaid label emailed to seller'}</div>
       </div>`;
-    initStripe();
+    // Wire email blur → load card element once email is valid
+    setTimeout(()=>{
+      const emailEl=document.getElementById('buyerEmail');
+      if(emailEl){emailEl.addEventListener('blur',initStripe,{once:false});}
+    },0);
   }
   window.renderCheckoutInner = renderCheckout;
   document.getElementById('checkoutTitle').textContent=currentListing.title;
@@ -523,8 +527,10 @@ function openCheckout(){
 }
 
 async function initStripe(){
+  const email=document.getElementById('buyerEmail')?.value.trim()||'';
+  if(!email||!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)){return;} // wait for valid email
+  if(stripe&&cardElement){return;} // already initialized
   try{
-    const email=document.getElementById('buyerEmail')?.value.trim()||'';
     const dt=window._checkoutDelivery||'ship';
     const body={listingId:currentListing.id,buyerEmail:email,deliveryType:dt};
     const res=await fetch(`${API}/checkout`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)});
