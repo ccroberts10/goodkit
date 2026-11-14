@@ -1705,6 +1705,10 @@ app.post('/webhook', async (req, res) => {
             console.log(`Label generated: ${trackingNumber} (${label.carrier} ${label.service} $${label.rate})`);
           } else {
             console.warn('Shippo label skipped — missing seller address or buyer address');
+            // Alert admin so we can follow up manually
+            await sendEmail(NOTIFY_EMAIL, `[GoodKit] Label NOT generated — sale ${sale.id}`,
+              `Sale ID: ${sale.id}\nListing: ${listing.title}\nSeller: ${listing.seller_email}\nBuyer: ${sale.buyer_email}\n\nReason: ${!sellerAddr ? 'Seller has no shipping address saved' : 'Buyer address missing'}\n\nFix: have seller add address at good-kit.com/sell, then use admin retry endpoint:\nPOST /admin/retry-label?adminKey=KEY&saleId=${sale.id}`
+            ).catch(()=>{});
           }
         } catch(shipErr) {
           console.error('Shippo label error:', shipErr.message);
@@ -3547,6 +3551,34 @@ function applyConsignDiscounts() {
 applyConsignDiscounts();
 setInterval(applyConsignDiscounts, 24 * 60 * 60 * 1000);
 // ─────────────────────────────────────────────────────────────────────────────
+
+// POST /admin/retry-label — regenerate shipping label for a sale (use when label failed at checkout)
+app.post('/admin/retry-label', async (req, res) => {
+  res.set('Access-Control-Allow-Origin', '*');
+  const { adminKey, saleId } = req.body;
+  if (adminKey !== process.env.ADMIN_KEY) return res.status(401).json({ error: 'Unauthorized' });
+  try {
+    const sale = db.prepare("SELECT * FROM sales WHERE id=?").get(saleId);
+    if (!sale) return res.status(404).json({ error: 'Sale not found' });
+    const listing = db.prepare("SELECT * FROM listings WHERE id=?").get(sale.listing_id);
+    if (!listing) return res.status(404).json({ error: 'Listing not found' });
+    const sellerAddr = db.prepare("SELECT ship_name, ship_street1, ship_city, ship_state, ship_zip, ship_phone FROM seller_sessions WHERE email=? AND used=1 AND ship_street1 IS NOT NULL ORDER BY created_at DESC LIMIT 1").get(listing.seller_email);
+    if (!sellerAddr) return res.status(400).json({ error: 'Seller has no shipping address saved — have them add it at good-kit.com/sell first' });
+    if (!sale.buyer_street1) return res.status(400).json({ error: 'Sale has no buyer address' });
+    const label = await createShippingLabel({
+      fromAddress: { name: sellerAddr.ship_name, street1: sellerAddr.ship_street1, city: sellerAddr.ship_city, state: sellerAddr.ship_state, zip: sellerAddr.ship_zip, phone: sellerAddr.ship_phone || '', country: 'US' },
+      toAddress:   { name: sale.buyer_name || sale.buyer_email, street1: sale.buyer_street1, city: sale.buyer_city, state: sale.buyer_state, zip: sale.buyer_zip, country: 'US' },
+      weightOz: listing.weight_oz || 16,
+      listingTitle: listing.title
+    });
+    db.prepare("UPDATE sales SET label_url=?, tracking_number=?, tracking_url=?, shippo_tracker_id=? WHERE id=?").run(label.labelUrl, label.trackingNumber, label.trackingUrl, label.trackerObjectId || null, sale.id);
+    // Email seller the label
+    await sendEmail(listing.seller_email, `Your shipping label for "${listing.title}"`,
+      `<p>Your shipping label is ready:</p><p><a href="${label.labelUrl}">Download Label (PDF)</a></p><p>Tracking: ${label.trackingNumber}</p>`
+    );
+    res.json({ success: true, labelUrl: label.labelUrl, trackingNumber: label.trackingNumber });
+  } catch(err) { res.status(500).json({ error: err.message }); }
+});
 
 app.listen(PORT, () => console.log(`GoodKit Marketplace running on port ${PORT}`));
 
