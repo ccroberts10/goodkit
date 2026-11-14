@@ -269,7 +269,7 @@ nav{position:sticky;top:0;z-index:100;background:var(--ink);display:flex;align-i
 
 <div class="toast" id="toast"></div>
 
-<script src="https://cdnjs.cloudflare.com/ajax/libs/stripe.js/v3/stripe.min.js"></script>
+<script src="https://js.stripe.com/v3/"></script>
 <script>
 const API = window.location.hostname==='localhost' ? 'http://localhost:3000' : 'https://api.good-kit.com';
 let allListings=[],currentListing=null,stripe=null,cardElement=null;
