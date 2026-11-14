@@ -529,7 +529,7 @@ async function initStripe(){
     const body={listingId:currentListing.id,buyerEmail:email,deliveryType:dt};
     const res=await fetch(`${API}/checkout`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)});
     const data=await res.json();
-    if(!data.publishableKey)return;
+    if(!res.ok||!data.publishableKey){console.error('Checkout init error:',data.error||data);showToast(data.error||'Checkout unavailable','error');return;}
     stripe=Stripe(data.publishableKey);
     const els=stripe.elements();
     cardElement=els.create('card',{style:{base:{fontFamily:'DM Sans,sans-serif',fontSize:'14px',color:'#111111'}}});

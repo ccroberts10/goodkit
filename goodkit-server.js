@@ -245,6 +245,11 @@ db.exec(`
   `ALTER TABLE seller_sessions ADD COLUMN account_type TEXT DEFAULT 'individual'`,
   `ALTER TABLE seller_sessions ADD COLUMN shop_slug TEXT DEFAULT NULL`,
   `ALTER TABLE listings ADD COLUMN account_type TEXT DEFAULT 'individual'`,
+  `ALTER TABLE listings ADD COLUMN stripe_account_id TEXT DEFAULT NULL`,
+  `ALTER TABLE listings ADD COLUMN delivery_type TEXT DEFAULT 'ship'`,
+  `ALTER TABLE listings ADD COLUMN allows_pickup INTEGER DEFAULT 0`,
+  `ALTER TABLE listings ADD COLUMN community_id TEXT DEFAULT NULL`,
+  `ALTER TABLE sales ADD COLUMN sold_at TEXT DEFAULT NULL`,
 ].forEach(sql => { try { db.exec(sql); } catch(e) {} });
 
 // Pro athlete / pro consignment / shop wallet migrations
