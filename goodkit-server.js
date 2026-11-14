@@ -910,6 +910,45 @@ app.get('/seller/status/:accountId', async (req, res) => {
 // Magic link auth — seller only (no staff role in GoodKit)
 app.post('/seller/magic-link', async (req, res) => handleMagicLink(req, res));
 app.post('/seller/auth/request',  async (req, res) => handleMagicLink(req, res));
+
+// Buyer magic link — sends login link that returns to listing checkout
+app.post('/buyer/magic-link', async (req, res) => {
+  try {
+    const { email, listingId } = req.body;
+    if (!email) return res.status(400).json({ error: 'Email required' });
+    const emailClean = email.toLowerCase().trim();
+    const token     = uuidv4() + uuidv4();
+    const expiresAt = new Date(Date.now() + 30 * 60 * 1000).toISOString(); // 30 min
+    db.prepare("INSERT INTO seller_sessions (id, email, token, role, expires_at) VALUES (?, ?, ?, 'buyer', ?)").run(uuidv4(), emailClean, token, expiresAt);
+    const returnUrl = listingId ? `/listing/${listingId}?buyerToken=${token}` : `/shop?buyerToken=${token}`;
+    const link = `${BASE_URL}${returnUrl}`;
+    await sendEmail(email, 'Your GoodKit checkout link', emailTemplate('Complete your purchase',
+      `<p style="font-size:15px;color:#1A1A14;line-height:1.7;margin:0 0 20px;">Click below to continue to checkout. Link expires in 30 minutes.</p>
+       <a href="${link}" style="display:inline-block;background:#FF5C1A;color:white;padding:14px 28px;font-size:14px;font-weight:600;text-decoration:none;">Continue to checkout →</a>
+       <p style="font-size:12px;color:#888;margin:20px 0 0;">If you didn't request this, ignore this email.</p>`
+    ));
+    res.json({ success: true });
+  } catch(err) { res.status(500).json({ error: err.message }); }
+});
+
+// Verify buyer token — returns profile info for pre-filling checkout
+app.get('/buyer/verify', (req, res) => {
+  try {
+    const { token } = req.query;
+    if (!token) return res.status(400).json({ error: 'Token required' });
+    const session = db.prepare("SELECT * FROM seller_sessions WHERE token=? AND role='buyer'").get(token);
+    if (!session) return res.status(401).json({ error: 'Invalid or expired token' });
+    if (new Date(session.expires_at) < new Date()) return res.status(401).json({ error: 'Token expired' });
+    // Mark used and issue long-lived session
+    db.prepare("UPDATE seller_sessions SET used=1 WHERE token=?").run(token);
+    const sessionToken  = uuidv4();
+    const sessionExpiry = new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString();
+    db.prepare("INSERT INTO seller_sessions (id, email, token, role, expires_at, used) VALUES (?, ?, ?, 'buyer', ?, 1)").run(uuidv4(), session.email, sessionToken, sessionExpiry);
+    // Pull most recent purchase info to pre-fill
+    const lastSale = db.prepare("SELECT * FROM sales WHERE buyer_email=? ORDER BY created_at DESC LIMIT 1").get(session.email);
+    res.json({ success: true, sessionToken, email: session.email, name: lastSale?.buyer_name||'', street1: lastSale?.buyer_street1||'', city: lastSale?.buyer_city||'', state: lastSale?.buyer_state||'', zip: lastSale?.buyer_zip||'' });
+  } catch(err) { res.status(500).json({ error: err.message }); }
+});
 async function handleMagicLink(req, res) {
   try {
     const { email } = req.body;
