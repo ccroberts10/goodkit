@@ -1685,6 +1685,7 @@ app.post('/webhook', async (req, res) => {
                 state:   sellerAddr.ship_state,
                 zip:     sellerAddr.ship_zip,
                 phone:   sellerAddr.ship_phone || '',
+                email:   listing.seller_email,
                 country: 'US'
               },
               toAddress: {
@@ -3566,7 +3567,7 @@ app.post('/admin/retry-label', async (req, res) => {
     if (!sellerAddr) return res.status(400).json({ error: 'Seller has no shipping address saved — have them add it at good-kit.com/sell first' });
     if (!sale.buyer_street1) return res.status(400).json({ error: 'Sale has no buyer address' });
     const label = await createShippingLabel({
-      fromAddress: { name: sellerAddr.ship_name, street1: sellerAddr.ship_street1, city: sellerAddr.ship_city, state: sellerAddr.ship_state, zip: sellerAddr.ship_zip, phone: sellerAddr.ship_phone || '', country: 'US' },
+      fromAddress: { name: sellerAddr.ship_name, street1: sellerAddr.ship_street1, city: sellerAddr.ship_city, state: sellerAddr.ship_state, zip: sellerAddr.ship_zip, phone: sellerAddr.ship_phone || '', email: listing.seller_email, country: 'US' },
       toAddress:   { name: sale.buyer_name || sale.buyer_email, street1: sale.buyer_street1, city: sale.buyer_city, state: sale.buyer_state, zip: sale.buyer_zip, country: 'US' },
       weightOz: listing.weight_oz || 16,
       listingTitle: listing.title
