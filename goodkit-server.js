@@ -238,6 +238,8 @@ db.exec(`
   // Shippo tracking webhook integration
   `ALTER TABLE sales ADD COLUMN shippo_tracker_id TEXT DEFAULT NULL`,
   `ALTER TABLE sales ADD COLUMN delivered_at TEXT DEFAULT NULL`,
+  // IMBA trail donation: 10% of GoodKit's platform fee, tracked per sale
+  `ALTER TABLE sales ADD COLUMN trail_donation INTEGER DEFAULT 0`,
 ].forEach(sql => { try { db.exec(sql); } catch(e) {} });
 
 // Shop consignment migrations
@@ -928,6 +930,7 @@ app.get('/shop', (req, res) => res.sendFile(path.join(__dirname, 'goodkit-market
 app.get('/marketplace', (req, res) => res.sendFile(path.join(__dirname, 'goodkit-marketplace.html')));
 app.get('/sell',            (req, res) => res.sendFile(path.join(__dirname, 'goodkit-seller-portal.html')));
 app.get('/sell-your-gear', (req, res) => res.sendFile(path.join(__dirname, 'sell-your-gear.html')));
+app.get('/about',          (req, res) => res.sendFile(path.join(__dirname, 'about.html')));
 app.get('/seller-portal',  (req, res) => res.sendFile(path.join(__dirname, 'goodkit-seller-portal.html')));
 app.get('/health', (req, res) => res.json({ status: 'GoodKit Marketplace running' }));
 
@@ -1513,10 +1516,11 @@ Write the description as if you are describing the item to a buyer. Include: wha
 
 app.get('/stats', (req, res) => {
   try {
-    const listingCount = db.prepare("SELECT COUNT(*) as n FROM listings WHERE status='approved'").get().n;
-    const salesCount   = db.prepare("SELECT COUNT(*) as n FROM sales WHERE status NOT IN ('pending','cancelled')").get().n;
-    const sellerCount  = db.prepare("SELECT COUNT(DISTINCT email) as n FROM seller_sessions WHERE used=1").get().n;
-    res.json({ listings: listingCount, sales: salesCount, sellers: sellerCount });
+    const listingCount  = db.prepare("SELECT COUNT(*) as n FROM listings WHERE status='approved'").get().n;
+    const salesCount    = db.prepare("SELECT COUNT(*) as n FROM sales WHERE status NOT IN ('pending','cancelled')").get().n;
+    const sellerCount   = db.prepare("SELECT COUNT(DISTINCT email) as n FROM seller_sessions WHERE used=1").get().n;
+    const trailTotal    = db.prepare("SELECT SUM(trail_donation) as n FROM sales WHERE status NOT IN ('pending','cancelled')").get().n || 0;
+    res.json({ listings: listingCount, sales: salesCount, sellers: sellerCount, trail_donated: trailTotal });
   } catch(err) { res.status(500).json({ error: err.message }); }
 });
 
@@ -1646,7 +1650,8 @@ app.post('/checkout', async (req, res) => {
 
     const saleId = uuidv4();
     const payoutAfter = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString(); // 7 days from purchase; updated to delivery+48h when carrier confirms
-    db.prepare(`INSERT INTO sales (id,listing_id,buyer_email,buyer_name,buyer_street1,buyer_city,buyer_state,buyer_zip,payment_intent_id,amount,seller_payout,platform_payout,delivery_type,label_tier,ccx_code,ccx_fund,payout_after) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`)
+    const trailDonation = Math.round(split.platformFee * 100 * 0.10); // 10% of GoodKit's fee → IMBA
+    db.prepare(`INSERT INTO sales (id,listing_id,buyer_email,buyer_name,buyer_street1,buyer_city,buyer_state,buyer_zip,payment_intent_id,amount,seller_payout,platform_payout,delivery_type,label_tier,ccx_code,ccx_fund,payout_after,trail_donation) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`)
       .run(saleId, listingId, buyerEmail,
         buyerName || '', buyerStreet1 || '', buyerCity || '', buyerState || '', buyerZip || '',
         paymentIntent.id, listing.price,
@@ -1656,7 +1661,8 @@ app.post('/checkout', async (req, res) => {
         labelInfo.tier,
         listing.ccx_code || null,
         Math.round((split.ccxFund || 0) * 100),
-        payoutAfter
+        payoutAfter,
+        trailDonation
       );
 
     res.json({
@@ -2792,7 +2798,10 @@ app.get('/listing/:idslug', (req, res) => {
 <body>
 <nav class="nav">
   <a class="nav-logo" href="${SITE_URL}">goodkit<span>.</span></a>
-  <a class="nav-cta" href="${SITE_URL}/marketplace">Shop All Gear</a>
+  <div style="display:flex;gap:8px;align-items:center;">
+    <a href="${SITE_URL}/about" style="color:#aaa;text-decoration:none;font-size:13px;">About</a>
+    <a class="nav-cta" href="${SITE_URL}/marketplace">Shop All Gear</a>
+  </div>
 </nav>
 <div class="container">
   <div class="layout">

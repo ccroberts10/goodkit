@@ -1,0 +1,327 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+  <title>About GoodKit</title>
+  <meta name="description" content="GoodKit is the cycling gear marketplace built by riders, for riders. Fair fees, real community, and 10% of every sale goes to IMBA trail maintenance.">
+  <meta property="og:title" content="About GoodKit — The Cycling Gear Marketplace">
+  <meta property="og:description" content="Fair fees, no fluff. 10% of every GoodKit sale funds IMBA trail maintenance.">
+  <meta property="og:url" content="https://good-kit.com/about">
+  <meta property="og:site_name" content="GoodKit">
+  <link rel="canonical" href="https://good-kit.com/about">
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Space+Mono:ital,wght@0,400;0,700;1,400&display=swap">
+  <style>
+    *{box-sizing:border-box;margin:0;padding:0}
+    :root{
+      --bg:#0a0a0a;--ink:#f0f0f0;--muted:#888;--border:#222;
+      --orange:#FF5C1A;--green:#1A6B3C;--green-light:rgba(26,107,60,0.12);
+      --card:#111;--card-border:#1e1e1e;
+    }
+    body{background:var(--bg);color:var(--ink);font-family:'Space Mono',monospace;-webkit-font-smoothing:antialiased;overflow-x:hidden;}
+
+    /* NAV */
+    .nav{position:sticky;top:0;z-index:100;background:var(--bg);border-bottom:1px solid var(--border);padding:0 24px;height:56px;display:flex;align-items:center;justify-content:space-between;}
+    .nav-logo{font-size:20px;font-weight:700;text-decoration:none;color:#fff;letter-spacing:-0.5px;}
+    .nav-logo span{color:var(--orange);}
+    .nav-links{display:flex;gap:8px;}
+    .btn{display:inline-flex;align-items:center;padding:9px 18px;border-radius:6px;font-family:inherit;font-size:13px;font-weight:700;text-decoration:none;cursor:pointer;border:none;transition:opacity .15s;}
+    .btn-ghost{background:transparent;color:var(--ink);border:1px solid var(--border);}
+    .btn-primary{background:var(--orange);color:#fff;}
+    .btn:hover{opacity:0.85;}
+    .nav-hamburger{display:none;flex-direction:column;gap:4px;cursor:pointer;padding:8px 4px;background:none;border:none;}
+    .nav-hamburger span{display:block;width:20px;height:2px;background:#fff;border-radius:2px;transition:transform .2s,opacity .2s;}
+    .nav-hamburger.open span:nth-child(1){transform:translateY(6px) rotate(45deg);}
+    .nav-hamburger.open span:nth-child(2){opacity:0;}
+    .nav-hamburger.open span:nth-child(3){transform:translateY(-6px) rotate(-45deg);}
+    @media(max-width:480px){
+      .nav-hamburger{display:flex;}
+      .nav-links{display:none;position:fixed;top:56px;left:0;right:0;background:var(--bg);border-bottom:1px solid var(--border);flex-direction:column;align-items:stretch;gap:0;padding:8px 16px 12px;z-index:200;}
+      .nav-links.open{display:flex;}
+      .nav-links a{padding:10px 0;border-bottom:1px solid var(--border);font-size:14px;}
+      .nav-links a:last-child{border-bottom:none;}
+    }
+
+    /* LAYOUT */
+    .container{max-width:760px;margin:0 auto;padding:0 24px 100px;}
+    @media(max-width:600px){.container{padding:0 16px 80px;}}
+
+    /* HERO */
+    .hero{padding:72px 0 56px;border-bottom:1px solid var(--border);}
+    .hero-eyebrow{font-size:11px;letter-spacing:0.15em;text-transform:uppercase;color:var(--orange);margin-bottom:16px;}
+    .hero h1{font-size:clamp(32px,6vw,52px);font-weight:700;line-height:1.1;letter-spacing:-1px;margin-bottom:24px;}
+    .hero h1 em{color:var(--orange);font-style:normal;}
+    .hero-sub{font-size:16px;line-height:1.75;color:rgba(240,240,240,0.65);max-width:580px;}
+
+    /* SECTIONS */
+    section{padding:56px 0;border-bottom:1px solid var(--border);}
+    section:last-child{border-bottom:none;}
+    .section-label{font-size:11px;letter-spacing:0.15em;text-transform:uppercase;color:var(--muted);margin-bottom:20px;}
+    h2{font-size:clamp(22px,4vw,30px);font-weight:700;letter-spacing:-0.5px;line-height:1.2;margin-bottom:20px;}
+    p{font-size:14px;line-height:1.9;color:rgba(240,240,240,0.7);font-family:system-ui,sans-serif;margin-bottom:14px;}
+    p:last-child{margin-bottom:0;}
+
+    /* TRAIL SECTION */
+    .trail-banner{background:var(--green-light);border:1px solid rgba(26,107,60,0.3);border-radius:12px;padding:32px;margin-bottom:32px;}
+    .trail-banner h2{color:#4ade80;margin-bottom:12px;}
+    .trail-banner p{color:rgba(240,240,240,0.75);}
+    .trail-stat{display:inline-block;font-size:48px;font-weight:700;color:#4ade80;letter-spacing:-2px;line-height:1;margin-bottom:4px;}
+    .trail-stat-label{font-size:12px;color:rgba(74,222,128,0.6);letter-spacing:0.1em;text-transform:uppercase;margin-bottom:24px;}
+    .imba-badge{display:inline-flex;align-items:center;gap:8px;background:rgba(26,107,60,0.2);border:1px solid rgba(74,222,128,0.2);border-radius:6px;padding:8px 14px;font-size:12px;color:#4ade80;font-weight:700;margin-top:8px;}
+
+    /* COMPARISON TABLE */
+    .compare-table{width:100%;border-collapse:collapse;font-size:13px;margin-top:8px;}
+    .compare-table th{text-align:left;padding:10px 12px;font-size:11px;letter-spacing:0.1em;text-transform:uppercase;color:var(--muted);border-bottom:2px solid var(--border);}
+    .compare-table th:not(:first-child){text-align:center;}
+    .compare-table td{padding:12px 12px;border-bottom:1px solid var(--border);color:rgba(240,240,240,0.8);vertical-align:middle;font-family:system-ui,sans-serif;}
+    .compare-table td:not(:first-child){text-align:center;}
+    .compare-table tr:last-child td{border-bottom:none;}
+    .compare-table .us{color:#fff;font-weight:600;}
+    .compare-table .yes{color:#4ade80;}
+    .compare-table .no{color:#555;}
+    .compare-table .highlight td{background:rgba(255,92,26,0.04);}
+    .compare-table .highlight td.us{color:var(--orange);}
+    .col-goodkit{background:rgba(255,92,26,0.06);}
+
+    /* HOW IT WORKS */
+    .steps{display:flex;flex-direction:column;gap:0;}
+    .step{display:flex;gap:20px;padding:20px 0;border-bottom:1px solid var(--border);}
+    .step:last-child{border-bottom:none;}
+    .step-num{font-size:32px;font-weight:700;color:var(--orange);line-height:1;min-width:36px;}
+    .step-body h3{font-size:15px;font-weight:700;margin-bottom:6px;}
+    .step-body p{margin:0;font-size:13px;line-height:1.7;}
+
+    /* MISSION CARDS */
+    .cards{display:grid;grid-template-columns:1fr 1fr;gap:16px;margin-top:8px;}
+    @media(max-width:520px){.cards{grid-template-columns:1fr;}}
+    .card{background:var(--card);border:1px solid var(--card-border);border-radius:10px;padding:24px;}
+    .card-icon{font-size:28px;margin-bottom:12px;}
+    .card h3{font-size:14px;font-weight:700;margin-bottom:8px;}
+    .card p{font-size:13px;margin:0;line-height:1.7;}
+
+    /* CTA */
+    .cta-block{text-align:center;padding:64px 0 0;}
+    .cta-block h2{margin-bottom:12px;}
+    .cta-block p{margin-bottom:28px;}
+    .cta-btns{display:flex;gap:12px;justify-content:center;flex-wrap:wrap;}
+  </style>
+</head>
+<body>
+
+<nav class="nav">
+  <a href="/" class="nav-logo">goodkit<span>.</span></a>
+  <div class="nav-links" id="navLinks">
+    <a href="/marketplace" class="btn btn-ghost">Shop Gear</a>
+    <a href="/sell-your-gear" class="btn btn-primary">Sell Gear</a>
+  </div>
+  <button class="nav-hamburger" id="navHamburger" aria-label="Menu" onclick="toggleNav()">
+    <span></span><span></span><span></span>
+  </button>
+</nav>
+
+<div class="container">
+
+  <div class="hero">
+    <div class="hero-eyebrow">About GoodKit</div>
+    <h1>Built by riders.<br><em>For riders.</em></h1>
+    <p class="hero-sub">GoodKit is a peer-to-peer cycling gear marketplace. No auction nonsense, no 47 seller tiers, no $7.99 "featured listing" upsells. You list your gear, someone buys it, you keep 85%. We handle the rest — and we give back to the trails while we're at it.</p>
+  </div>
+
+  <!-- TRAIL GIVING -->
+  <section>
+    <div class="section-label">Giving back</div>
+    <div class="trail-banner">
+      <div class="trail-stat" id="trailStat">$—</div>
+      <div class="trail-stat-label">donated to trail maintenance so far</div>
+      <h2>Every sale funds the trails you ride.</h2>
+      <p>We give 10% of GoodKit's fee from every completed sale to the <strong style="color:#4ade80;">International Mountain Bicycling Association (IMBA)</strong> — the organization that fights for trail access and funds the trail crews doing the actual work.</p>
+      <p>It's not a marketing stunt. It's not opt-in. It happens automatically, every sale, no strings. Because if we're going to build a business out of people buying and selling the gear they ride, the least we can do is make sure there are trails to ride it on.</p>
+      <div class="imba-badge">🌲 Official IMBA Trail Partner</div>
+    </div>
+    <p>IMBA operates in all 50 states and 40+ countries. They've built or improved over 90,000 miles of trails. When you buy or sell on GoodKit, you're part of that.</p>
+  </section>
+
+  <!-- HOW IT WORKS -->
+  <section>
+    <div class="section-label">How it works</div>
+    <h2>Simple by design.</h2>
+    <div class="steps">
+      <div class="step">
+        <div class="step-num">1</div>
+        <div class="step-body">
+          <h3>List your gear in minutes</h3>
+          <p>Photos, price, condition. We detect the brand, suggest keywords, and handle all the SEO so your listing gets found on Google — not just inside our app.</p>
+        </div>
+      </div>
+      <div class="step">
+        <div class="step-num">2</div>
+        <div class="step-body">
+          <h3>Buyer pays securely</h3>
+          <p>Stripe handles payment. No awkward Venmo requests, no "can you mark as gift?" DMs. Buyers are protected for 72 hours after delivery.</p>
+        </div>
+      </div>
+      <div class="step">
+        <div class="step-num">3</div>
+        <div class="step-body">
+          <h3>Ship with discounted labels</h3>
+          <p>We generate a prepaid Shippo label at our negotiated rate — cheaper than the post office. Drop it at USPS or UPS, done.</p>
+        </div>
+      </div>
+      <div class="step">
+        <div class="step-num">4</div>
+        <div class="step-body">
+          <h3>Get paid directly</h3>
+          <p>Funds go straight to your bank via Stripe Connect. No waiting for GoodKit to cut you a check. We never hold your money.</p>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- COMPARISON -->
+  <section>
+    <div class="section-label">How we stack up</div>
+    <h2>Fewer fees. More trail.</h2>
+    <table class="compare-table">
+      <thead>
+        <tr>
+          <th>Feature</th>
+          <th class="col-goodkit">GoodKit</th>
+          <th>eBay</th>
+          <th>Facebook</th>
+          <th>Pinkbike</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr class="highlight">
+          <td>Seller keeps</td>
+          <td class="us col-goodkit">85%</td>
+          <td>~87% <span style="color:var(--muted);font-size:11px;">(+ listing fees)</span></td>
+          <td>100% <span style="color:var(--muted);font-size:11px;">(you do the work)</span></td>
+          <td>~90% <span style="color:var(--muted);font-size:11px;">(+ $20/yr)</span></td>
+        </tr>
+        <tr>
+          <td>Cycling-specific</td>
+          <td class="yes col-goodkit">✓</td>
+          <td class="no">✗</td>
+          <td class="no">✗</td>
+          <td class="yes">✓</td>
+        </tr>
+        <tr>
+          <td>Prepaid shipping labels</td>
+          <td class="yes col-goodkit">✓ Included</td>
+          <td class="yes">✓</td>
+          <td class="no">✗ You figure it out</td>
+          <td class="no">✗</td>
+        </tr>
+        <tr>
+          <td>Buyer protection</td>
+          <td class="yes col-goodkit">✓ 72 hrs</td>
+          <td class="yes">✓</td>
+          <td class="no">✗ Good luck</td>
+          <td class="no">✗</td>
+        </tr>
+        <tr>
+          <td>Direct bank deposit</td>
+          <td class="yes col-goodkit">✓ Stripe Connect</td>
+          <td class="yes">✓</td>
+          <td class="no">✗ Cash/Venmo</td>
+          <td class="no">✗</td>
+        </tr>
+        <tr>
+          <td>Google-indexed listings</td>
+          <td class="yes col-goodkit">✓ Every listing</td>
+          <td class="yes">✓</td>
+          <td class="no">✗</td>
+          <td class="yes">✓</td>
+        </tr>
+        <tr>
+          <td>Trail giving</td>
+          <td class="yes col-goodkit">✓ 10% to IMBA</td>
+          <td class="no">✗</td>
+          <td class="no">✗</td>
+          <td class="no">✗</td>
+        </tr>
+        <tr>
+          <td>No auction format</td>
+          <td class="yes col-goodkit">✓</td>
+          <td class="no">✗ Auctions exist</td>
+          <td class="yes">✓</td>
+          <td class="yes">✓</td>
+        </tr>
+      </tbody>
+    </table>
+  </section>
+
+  <!-- MISSION -->
+  <section>
+    <div class="section-label">Why we exist</div>
+    <h2>Cycling gear deserves a better home.</h2>
+    <p>Facebook Marketplace means blurry photos, lowball offers, and meeting strangers in parking lots. eBay means competing against businesses selling new gear at a discount. Pinkbike is great if you're technical enough to navigate it and comfortable with zero protections.</p>
+    <p>GoodKit is for everyone in between — the rider who upgraded their fork and needs to move the old one, the person getting into gravel and looking for a deal on a kit, the cyclist who bought a saddle that just doesn't work for them. Real people, real gear, real prices.</p>
+    <div class="cards" style="margin-top:28px;">
+      <div class="card">
+        <div class="card-icon">🛡️</div>
+        <h3>Buyer protection built in</h3>
+        <p>72-hour window after delivery to flag an issue. No "as-is, all sales final" culture here.</p>
+      </div>
+      <div class="card">
+        <div class="card-icon">💸</div>
+        <h3>Sellers keep 85%</h3>
+        <p>Flat fee, no surprises. No listing fee, no "featured" upsells, no final value fee on top of a final value fee.</p>
+      </div>
+      <div class="card">
+        <div class="card-icon">📦</div>
+        <h3>Shipping made easy</h3>
+        <p>Discounted prepaid labels auto-generated at purchase. Drop and go.</p>
+      </div>
+      <div class="card">
+        <div class="card-icon">🌲</div>
+        <h3>Rides fund trails</h3>
+        <p>10% of every GoodKit fee goes to IMBA. The more gear changes hands, the more trails get built.</p>
+      </div>
+    </div>
+  </section>
+
+  <!-- CTA -->
+  <div class="cta-block">
+    <h2>Got gear collecting dust?</h2>
+    <p>List it in minutes. Keep 85%. Fund the trails.</p>
+    <div class="cta-btns">
+      <a href="/sell-your-gear" class="btn btn-primary" style="font-size:15px;padding:14px 28px;">Start Selling</a>
+      <a href="/marketplace" class="btn btn-ghost" style="font-size:15px;padding:14px 28px;">Browse Gear</a>
+    </div>
+  </div>
+
+</div>
+
+<script>
+const API = window.location.hostname === 'localhost' ? 'http://localhost:3000' : 'https://api.good-kit.com';
+
+async function loadTrailStat() {
+  try {
+    const r = await fetch(`${API}/stats`);
+    const d = await r.json();
+    const cents = d.trail_donated || 0;
+    const dollars = (cents / 100).toLocaleString('en-US', { style: 'currency', currency: 'USD', minimumFractionDigits: 0, maximumFractionDigits: 0 });
+    document.getElementById('trailStat').textContent = dollars;
+  } catch(e) {}
+}
+loadTrailStat();
+
+function toggleNav() {
+  const links = document.getElementById('navLinks');
+  const burger = document.getElementById('navHamburger');
+  if (!links || !burger) return;
+  const open = links.classList.toggle('open');
+  burger.classList.toggle('open', open);
+}
+document.addEventListener('click', function(e) {
+  const links = document.getElementById('navLinks');
+  const burger = document.getElementById('navHamburger');
+  if (links && burger && links.classList.contains('open') && !links.contains(e.target) && !burger.contains(e.target)) {
+    links.classList.remove('open'); burger.classList.remove('open');
+  }
+});
+</script>
+</body>
+</html>

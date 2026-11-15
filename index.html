@@ -252,6 +252,7 @@ footer{background:#0a0a0a;padding:40px 24px;display:flex;flex-direction:column;a
   <a href="/" class="nav-logo">goodkit<span class="dot">.</span></a>
   <div class="nav-links" id="navLinks">
     <a href="/marketplace" class="btn btn-ghost">Shop</a>
+    <a href="/about" class="btn btn-ghost">About</a>
     <a href="/sell-your-gear" class="btn btn-primary">Sell Gear</a>
   </div>
   <button class="nav-hamburger" id="navHamburger" aria-label="Menu" onclick="toggleNav()">
@@ -468,7 +469,8 @@ async function loadStats(){
     const el=document.getElementById('heroStats');
     if(!el||!d.listings)return;
     const stat=(n,label)=>`<div style="display:flex;flex-direction:column;gap:2px;"><span style="font-family:'Space Mono',monospace;font-size:16px;font-weight:700;color:#F2C12E;">${n}</span><span style="font-size:11px;color:rgba(245,245,240,0.6);letter-spacing:0.08em;text-transform:uppercase;">${label}</span></div>`;
-    el.innerHTML=stat(d.listings,'active listings')+stat(d.sales,'items sold')+stat(d.sellers,'sellers');
+    const trailDollars = d.trail_donated ? '$'+Math.round(d.trail_donated/100).toLocaleString() : null;
+    el.innerHTML=stat(d.listings,'active listings')+stat(d.sales,'items sold')+stat(d.sellers,'sellers')+(trailDollars?stat(trailDollars,'<a href="/about" style="color:inherit;text-decoration:underline;text-underline-offset:3px;">donated to IMBA trails</a>'):'');
   }catch(e){}
 }
 loadStats();
