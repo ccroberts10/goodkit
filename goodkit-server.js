@@ -250,6 +250,8 @@ db.exec(`
   `ALTER TABLE listings ADD COLUMN allows_pickup INTEGER DEFAULT 0`,
   `ALTER TABLE listings ADD COLUMN community_id TEXT DEFAULT NULL`,
   `ALTER TABLE sales ADD COLUMN sold_at TEXT DEFAULT NULL`,
+  `ALTER TABLE listings ADD COLUMN expires_at TEXT DEFAULT NULL`,
+  `ALTER TABLE listings ADD COLUMN deactivated_at TEXT DEFAULT NULL`,
 ].forEach(sql => { try { db.exec(sql); } catch(e) {} });
 
 // Pro athlete / pro consignment / shop wallet migrations
