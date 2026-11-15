@@ -2817,6 +2817,7 @@ app.get('/listing/:idslug', (req, res) => {
         <a class="cta-btn" href="${SITE_URL}/marketplace#${listing.id}">Buy on GoodKit →</a>
         <div class="cta-sub">Secure checkout · Shippo-powered shipping · Seller keeps 85%</div>
       </div>
+      ${(() => { const g = CATEGORY_GROUPS.find(g => g.cats.includes(listing.category)); return g ? `<div style="margin-top:24px;padding-top:16px;border-top:1px solid #1a1a1a;font-size:12px;color:#555;">Browse more <a href="${SITE_URL}/gear/${g.slug}" style="color:#FF5C1A;text-decoration:none;">${g.label}</a> for sale on GoodKit</div>` : ''; })()}
       ${keywords ? `<div class="section-label" style="margin-top:28px">Tags</div><div class="keywords-list">${keywords}</div>` : ''}
     </div>
   </div>
@@ -2960,6 +2961,7 @@ app.get('/sitemap.xml', (req, res) => {
     const urls = [
       { loc: SITE_URL, priority: '1.0', changefreq: 'daily' },
       { loc: `${SITE_URL}/marketplace`, priority: '0.9', changefreq: 'hourly' },
+      { loc: `${SITE_URL}/sell-your-gear`, priority: '0.8', changefreq: 'monthly' },
       ...CATEGORY_GROUPS.map(g => ({
         loc: `${SITE_URL}/gear/${g.slug}`,
         priority: '0.8',
@@ -2988,7 +2990,7 @@ ${urls.map(u => `  <url>
 // Robots.txt
 app.get('/robots.txt', (req, res) => {
   res.setHeader('Content-Type', 'text/plain');
-  res.send(`User-agent: *\nAllow: /\nDisallow: /admin/\nDisallow: /seller/\nSitemap: ${SITE_URL}/sitemap.xml\n`);
+  res.send(`User-agent: *\nAllow: /\nDisallow: /admin\nDisallow: /admin/\nDisallow: /seller\nDisallow: /seller/\nDisallow: /api/\nDisallow: /uploads/\nDisallow: /sell\nDisallow: /dashboard\nSitemap: ${SITE_URL}/sitemap.xml\n`);
 });
 
 // ── SHOP CONSIGNMENT ─────────────────────────────────────────────────────────
