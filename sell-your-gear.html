@@ -1,0 +1,245 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+  <title>Sell Your Cycling Gear — GoodKit</title>
+  <meta name="description" content="List your used bikes, parts, and gear in minutes. Keep 85% of every sale. Prepaid shipping handled. No listing fees.">
+  <link rel="icon" href="/favicon.ico">
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Space+Mono:wght@400;700&display=swap">
+  <style>
+    *,*::before,*::after{box-sizing:border-box;margin:0;padding:0;}
+    :root{
+      --bg:#0a0a0a;--ink:#f0ede6;--ink-soft:rgba(240,237,230,0.6);
+      --orange:#FF5C1A;--yellow:#F2C12E;--border:rgba(255,255,255,0.1);
+      --card:rgba(255,255,255,0.05);
+    }
+    body{background:var(--bg);color:var(--ink);font-family:'Space Mono',monospace;-webkit-font-smoothing:antialiased;overflow-x:hidden;}
+
+    /* NAV */
+    nav{position:fixed;top:0;left:0;right:0;z-index:100;background:var(--bg);border-bottom:1px solid var(--border);display:flex;align-items:center;justify-content:space-between;padding:0 24px;height:56px;}
+    .logo{font-family:'ABC Maxi Round','Nunito',system-ui,sans-serif;font-weight:900;font-size:22px;color:var(--ink);text-decoration:none;letter-spacing:-0.5px;}
+    .logo .dot{color:var(--yellow);}
+    .nav-links{display:flex;gap:8px;}
+    .btn{display:inline-flex;align-items:center;gap:6px;padding:9px 18px;border-radius:6px;font-family:'Space Mono',monospace;font-size:12px;font-weight:700;cursor:pointer;border:none;text-decoration:none;transition:all 0.12s;white-space:nowrap;letter-spacing:0.04em;text-transform:uppercase;}
+    .btn-ghost{background:transparent;color:var(--ink-soft);}
+    .btn-ghost:hover{color:var(--ink);}
+    .btn-orange{background:var(--orange);color:#fff;}
+    .btn-orange:hover{background:#e04d10;}
+    .btn-yellow{background:var(--yellow);color:#0a0a0a;}
+    .btn-yellow:hover{background:#d9a820;}
+    .btn-outline{background:transparent;color:var(--ink);border:1.5px solid var(--border);}
+    .btn-outline:hover{border-color:var(--ink);}
+
+    /* HERO */
+    .hero{padding:120px 24px 80px;max-width:900px;margin:0 auto;}
+    .hero-eyebrow{font-size:11px;letter-spacing:0.14em;color:var(--orange);text-transform:uppercase;margin-bottom:20px;}
+    .hero h1{font-family:'ABC Maxi Round','Nunito',system-ui,sans-serif;font-weight:900;font-size:clamp(42px,7vw,80px);line-height:1.0;margin-bottom:24px;}
+    .hero h1 em{color:var(--yellow);font-style:normal;}
+    .hero-sub{font-size:16px;color:var(--ink-soft);line-height:1.7;max-width:540px;margin-bottom:40px;}
+    .hero-ctas{display:flex;gap:12px;flex-wrap:wrap;}
+    .hero-stats{display:flex;gap:32px;margin-top:40px;flex-wrap:wrap;}
+    .hero-stat span:first-child{font-size:28px;font-weight:700;color:var(--yellow);display:block;}
+    .hero-stat span:last-child{font-size:11px;color:var(--ink-soft);letter-spacing:0.08em;text-transform:uppercase;}
+
+    /* STEPS */
+    .section{padding:80px 24px;max-width:900px;margin:0 auto;}
+    .eyebrow{font-size:11px;letter-spacing:0.14em;color:var(--orange);text-transform:uppercase;margin-bottom:16px;}
+    .section h2{font-family:'ABC Maxi Round','Nunito',system-ui,sans-serif;font-weight:900;font-size:clamp(28px,4vw,44px);line-height:1.1;margin-bottom:40px;}
+    .steps{display:grid;grid-template-columns:repeat(auto-fill,minmax(240px,1fr));gap:24px;}
+    .step{border:1px solid var(--border);border-radius:10px;padding:28px;}
+    .step-num{font-size:11px;color:var(--orange);letter-spacing:0.1em;margin-bottom:12px;}
+    .step-title{font-family:'ABC Maxi Round','Nunito',system-ui,sans-serif;font-weight:900;font-size:18px;margin-bottom:8px;}
+    .step-desc{font-size:13px;color:var(--ink-soft);line-height:1.65;}
+
+    /* FEE TABLE */
+    .fee-section{padding:80px 24px;border-top:1px solid var(--border);border-bottom:1px solid var(--border);background:rgba(255,255,255,0.02);}
+    .fee-inner{max-width:900px;margin:0 auto;display:grid;grid-template-columns:1fr 1fr;gap:48px;align-items:center;}
+    @media(max-width:640px){.fee-inner{grid-template-columns:1fr;}}
+    .fee-table{border:1px solid var(--border);border-radius:10px;overflow:hidden;}
+    .fee-row{display:flex;justify-content:space-between;padding:14px 20px;border-bottom:1px solid var(--border);font-size:14px;}
+    .fee-row:last-child{border-bottom:none;font-weight:700;}
+    .fee-row.hl{background:rgba(242,193,46,0.08);color:var(--yellow);}
+    .fee-row .neg{color:#e55;}
+
+    /* COMPARE */
+    .compare{display:grid;grid-template-columns:repeat(3,1fr);gap:16px;margin-top:32px;}
+    @media(max-width:580px){.compare{grid-template-columns:1fr;}}
+    .compare-col{border:1px solid var(--border);border-radius:10px;padding:20px;}
+    .compare-col.hl{border-color:var(--yellow);background:rgba(242,193,46,0.05);}
+    .compare-col h4{font-size:13px;font-weight:700;margin-bottom:16px;letter-spacing:0.04em;}
+    .compare-col h4 .tag{font-size:10px;background:var(--yellow);color:#0a0a0a;border-radius:4px;padding:2px 6px;margin-left:6px;vertical-align:middle;}
+    .compare-row{display:flex;justify-content:space-between;font-size:12px;padding:6px 0;border-bottom:1px solid rgba(255,255,255,0.05);}
+    .compare-row:last-child{border-bottom:none;}
+    .compare-row .val{color:var(--ink-soft);}
+    .compare-col.hl .compare-row .val{color:var(--yellow);}
+
+    /* SHIPPING */
+    .tiers{display:grid;grid-template-columns:repeat(4,1fr);gap:12px;margin-top:32px;}
+    @media(max-width:580px){.tiers{grid-template-columns:repeat(2,1fr);}}
+    .tier{border:1px solid var(--border);border-radius:8px;padding:20px;text-align:center;}
+    .tier-name{font-size:20px;font-weight:700;color:var(--yellow);margin-bottom:4px;}
+    .tier-range{font-size:11px;color:var(--ink-soft);margin-bottom:8px;}
+    .tier-price{font-size:22px;font-weight:700;}
+
+    /* CTA */
+    .cta-section{padding:80px 24px;text-align:center;}
+    .cta-section h2{font-family:'ABC Maxi Round','Nunito',system-ui,sans-serif;font-weight:900;font-size:clamp(32px,5vw,56px);line-height:1.1;margin-bottom:16px;}
+    .cta-section p{font-size:15px;color:var(--ink-soft);margin-bottom:36px;}
+    .cta-section .btns{display:flex;gap:12px;justify-content:center;flex-wrap:wrap;}
+
+    footer{border-top:1px solid var(--border);padding:32px 24px;text-align:center;font-size:12px;color:var(--ink-soft);}
+    footer a{color:var(--ink-soft);text-decoration:none;margin:0 10px;}
+    footer a:hover{color:var(--ink);}
+  </style>
+</head>
+<body>
+
+<nav>
+  <a href="/" class="logo">goodkit<span class="dot">.</span></a>
+  <div class="nav-links">
+    <a href="/marketplace" class="btn btn-ghost">Shop</a>
+    <a href="/sell" class="btn btn-orange">Get Started →</a>
+  </div>
+</nav>
+
+<div class="hero">
+  <div class="hero-eyebrow">Sell your cycling gear</div>
+  <h1>Your gear.<br><em>Real money.</em></h1>
+  <p class="hero-sub">List in 3 minutes. Keep 85% of every sale. Prepaid shipping label hits your inbox the moment it sells. No fees to list. No haggling with strangers on Facebook.</p>
+  <div class="hero-ctas">
+    <a href="/sell" class="btn btn-yellow" style="font-size:14px;padding:14px 28px;">List My Gear →</a>
+    <a href="/marketplace" class="btn btn-outline" style="font-size:14px;padding:14px 28px;">Browse the market</a>
+  </div>
+  <div class="hero-stats" id="heroStats">
+    <div class="hero-stat"><span>—</span><span>active listings</span></div>
+    <div class="hero-stat"><span>—</span><span>items sold</span></div>
+    <div class="hero-stat"><span>85%</span><span>you keep</span></div>
+  </div>
+</div>
+
+<div class="section">
+  <div class="eyebrow">How it works</div>
+  <h2>Three steps.<br>Done.</h2>
+  <div class="steps">
+    <div class="step">
+      <div class="step-num">01 —</div>
+      <div class="step-title">List it</div>
+      <p class="step-desc">Enter your email and get a magic link — no password needed. Add photos, write a description, pick a shipping weight. Takes 3 minutes, start to finish.</p>
+    </div>
+    <div class="step">
+      <div class="step-num">02 —</div>
+      <div class="step-title">Sell it</div>
+      <p class="step-desc">Buyer pays securely through Stripe. You get 85%, flat. No surprise fees, no "featured listing" upsells, no insertion charges. The math is always the same.</p>
+    </div>
+    <div class="step">
+      <div class="step-num">03 —</div>
+      <div class="step-title">Ship it</div>
+      <p class="step-desc">Prepaid label hits your inbox the moment the sale clears. Pack it, drop it off. Buyer pays the shipping — it's already in their checkout total.</p>
+    </div>
+  </div>
+</div>
+
+<div class="fee-section">
+  <div class="fee-inner">
+    <div>
+      <div class="eyebrow">Transparent pricing</div>
+      <h2 style="margin-bottom:16px;">You keep 85%.<br>Always.</h2>
+      <p style="font-size:14px;color:var(--ink-soft);line-height:1.7;margin-bottom:32px;">One flat rate. Sell a $200 fork, walk with $170. Sell a $1,500 shock, walk with $1,275. No hidden charges, no Stripe fees out of your pocket — we cover processing.</p>
+      <a href="/sell" class="btn btn-orange">Start Selling →</a>
+    </div>
+    <div>
+      <div class="fee-table">
+        <div class="fee-row"><span>Asking price</span><span>$200.00</span></div>
+        <div class="fee-row"><span>Platform fee (15%)</span><span class="neg">− $30.00</span></div>
+        <div class="fee-row"><span>Stripe processing</span><span style="color:var(--ink-soft);font-size:12px;">covered by us</span></div>
+        <div class="fee-row hl"><span>You receive</span><span>$170.00</span></div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div class="section">
+  <div class="eyebrow">How we compare</div>
+  <h2>GoodKit vs.<br>everywhere else.</h2>
+  <div class="compare">
+    <div class="compare-col hl">
+      <h4>GoodKit <span class="tag">us</span></h4>
+      <div class="compare-row"><span>Seller fee</span><span class="val">15% flat</span></div>
+      <div class="compare-row"><span>Listing fee</span><span class="val">Free</span></div>
+      <div class="compare-row"><span>Shipping</span><span class="val">Buyer pays</span></div>
+      <div class="compare-row"><span>Label prep</span><span class="val">Auto, in your inbox</span></div>
+      <div class="compare-row"><span>Buyer protection</span><span class="val">72-hr window</span></div>
+      <div class="compare-row"><span>Cycling-specific</span><span class="val">Yes</span></div>
+    </div>
+    <div class="compare-col">
+      <h4>eBay</h4>
+      <div class="compare-row"><span>Seller fee</span><span class="val">10–13.25%</span></div>
+      <div class="compare-row"><span>Listing fee</span><span class="val">After 250/mo</span></div>
+      <div class="compare-row"><span>Shipping</span><span class="val">You figure it out</span></div>
+      <div class="compare-row"><span>Label prep</span><span class="val">Manual</span></div>
+      <div class="compare-row"><span>Buyer protection</span><span class="val">Returns</span></div>
+      <div class="compare-row"><span>Cycling-specific</span><span class="val">No</span></div>
+    </div>
+    <div class="compare-col">
+      <h4>Facebook Marketplace</h4>
+      <div class="compare-row"><span>Seller fee</span><span class="val">5% (shipped)</span></div>
+      <div class="compare-row"><span>Listing fee</span><span class="val">Free</span></div>
+      <div class="compare-row"><span>Shipping</span><span class="val">Your problem</span></div>
+      <div class="compare-row"><span>Label prep</span><span class="val">Manual</span></div>
+      <div class="compare-row"><span>Buyer protection</span><span class="val">Minimal</span></div>
+      <div class="compare-row"><span>Cycling-specific</span><span class="val">No</span></div>
+    </div>
+  </div>
+</div>
+
+<div class="section">
+  <div class="eyebrow">Prepaid shipping</div>
+  <h2>We handle<br>the label.</h2>
+  <p style="font-size:14px;color:var(--ink-soft);line-height:1.7;max-width:540px;margin-bottom:8px;">Pick a weight tier when you list. The shipping cost is added to the buyer's checkout total — you never pay it. Label shows up in your inbox automatically when the sale clears.</p>
+  <div class="tiers">
+    <div class="tier"><div class="tier-name">XS</div><div class="tier-range">0 – 1 lb</div><div class="tier-price">$6</div></div>
+    <div class="tier"><div class="tier-name">SM</div><div class="tier-range">1 – 5 lb</div><div class="tier-price">$10</div></div>
+    <div class="tier"><div class="tier-name">MD</div><div class="tier-range">5 – 20 lb</div><div class="tier-price">$16</div></div>
+    <div class="tier"><div class="tier-name">LG</div><div class="tier-range">20+ lb</div><div class="tier-price">$45</div></div>
+  </div>
+  <p style="font-size:12px;color:var(--ink-soft);margin-top:16px;">Helmet = XS · Fork = SM · Full wheelset = LG · When in doubt, round up.</p>
+</div>
+
+<div class="cta-section">
+  <h2>Ready to<br>list your first item?</h2>
+  <p>Takes 3 minutes. Enter your email and go.</p>
+  <div class="btns">
+    <a href="/sell" class="btn btn-yellow" style="font-size:15px;padding:16px 32px;">List My Gear →</a>
+  </div>
+</div>
+
+<footer>
+  <div style="margin-bottom:12px;font-family:'ABC Maxi Round','Nunito',system-ui,sans-serif;font-weight:900;font-size:18px;">goodkit<span style="color:var(--yellow);">.</span></div>
+  <div>
+    <a href="/marketplace">Shop</a>
+    <a href="/sell-your-gear">Sell</a>
+    <a href="mailto:marketplace@good-kit.com">Contact</a>
+    <a href="/privacy">Privacy</a>
+    <a href="/terms">Terms</a>
+  </div>
+  <div style="margin-top:16px;">© 2026 GoodKit · it's supposed to be fun.</div>
+</footer>
+
+<script>
+const API = window.location.hostname === 'localhost' ? 'http://localhost:3000' : 'https://api.good-kit.com';
+async function loadStats(){
+  try{
+    const r=await fetch(`${API}/stats`);
+    const d=await r.json();
+    const el=document.getElementById('heroStats');
+    if(!el||!d.listings)return;
+    const stats=el.querySelectorAll('.hero-stat span:first-child');
+    if(stats[0])stats[0].textContent=d.listings;
+    if(stats[1])stats[1].textContent=d.sales;
+  }catch(e){}
+}
+loadStats();
+</script>
+</body>
+</html>

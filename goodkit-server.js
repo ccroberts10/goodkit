@@ -926,8 +926,9 @@ IMPORTANT: Return raw JSON only — no markdown, no code fences, no explanation.
 app.get('/', (req, res) => res.sendFile(path.join(__dirname, 'index.html')));
 app.get('/shop', (req, res) => res.sendFile(path.join(__dirname, 'goodkit-marketplace.html')));
 app.get('/marketplace', (req, res) => res.sendFile(path.join(__dirname, 'goodkit-marketplace.html')));
-app.get('/sell',          (req, res) => res.sendFile(path.join(__dirname, 'goodkit-seller-portal.html')));
-app.get('/seller-portal', (req, res) => res.sendFile(path.join(__dirname, 'goodkit-seller-portal.html')));
+app.get('/sell',            (req, res) => res.sendFile(path.join(__dirname, 'goodkit-seller-portal.html')));
+app.get('/sell-your-gear', (req, res) => res.sendFile(path.join(__dirname, 'sell-your-gear.html')));
+app.get('/seller-portal',  (req, res) => res.sendFile(path.join(__dirname, 'goodkit-seller-portal.html')));
 app.get('/health', (req, res) => res.json({ status: 'GoodKit Marketplace running' }));
 
 // Seller onboarding via Stripe Connect Express
@@ -1508,6 +1509,15 @@ Write the description as if you are describing the item to a buyer. Include: wha
     const label = getLabelTier(weightOz);
     res.json({ success: true, listingId: id, split, label, ccx_code: validCcxCode });
   } catch(err) { console.error('Listing error:', err); res.status(500).json({ error: err.message }); }
+});
+
+app.get('/stats', (req, res) => {
+  try {
+    const listingCount = db.prepare("SELECT COUNT(*) as n FROM listings WHERE status='approved'").get().n;
+    const salesCount   = db.prepare("SELECT COUNT(*) as n FROM sales WHERE status NOT IN ('pending','cancelled')").get().n;
+    const sellerCount  = db.prepare("SELECT COUNT(DISTINCT email) as n FROM seller_sessions WHERE used=1").get().n;
+    res.json({ listings: listingCount, sales: salesCount, sellers: sellerCount });
+  } catch(err) { res.status(500).json({ error: err.message }); }
 });
 
 app.get('/listings', (req, res) => {

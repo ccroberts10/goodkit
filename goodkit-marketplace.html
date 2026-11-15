@@ -280,6 +280,8 @@ async function loadListings(){
     const res=await fetch(`${API}/listings`);
     const data=await res.json();
     allListings=data.listings||[];
+    const params=new URLSearchParams(location.search);
+    const qParam=params.get('q');if(qParam){const si=document.getElementById('searchInput');if(si)si.value=qParam;}
     const hashCat=location.hash.startsWith('#cat=')?decodeURIComponent(location.hash.slice(5)):'';
     if(hashCat){const el=document.getElementById('catFilter');if(el)[...el.options].forEach(o=>{if(o.value===hashCat||o.text===hashCat)o.selected=true;});}
     filterListings();
@@ -717,13 +719,20 @@ function closeOffer(){document.getElementById('offerModal').classList.remove('op
 async function submitOffer(){
   const name=document.getElementById('offerName').value.trim();
   const email=document.getElementById('offerEmail').value.trim();
-  const amount=document.getElementById('offerAmount').value;
+  const amount=parseFloat(document.getElementById('offerAmount').value);
   const msg=document.getElementById('offerMessage').value.trim();
-  if(!email||!amount)return showToast('Email and amount required','error');
+  if(!email||!amount||amount<=0)return showToast('Email and a valid amount required','error');
+  const btn=document.querySelector('#offerModal .btn-primary');
+  btn.disabled=true;btn.textContent='Sending…';
   try{
-    await fetch(`${API}/offers`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({listingId:currentListing.id,buyerName:name,buyerEmail:email,amount,message:msg})});
+    const r=await fetch(`${API}/offers`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({listingId:currentListing.id,buyerName:name,buyerEmail:email,amount,message:msg})});
+    const d=await r.json();
+    if(!r.ok)throw new Error(d.error||'Server error');
     closeOffer();showToast('Offer sent! Seller will reply by email.');
-  }catch(e){showToast('Could not send offer','error');}
+    document.getElementById('offerName').value='';document.getElementById('offerEmail').value='';
+    document.getElementById('offerAmount').value='';document.getElementById('offerMessage').value='';
+  }catch(e){showToast(e.message||'Could not send offer','error');}
+  finally{btn.disabled=false;btn.textContent='Send Offer';}
 }
 
 async function sendMessage(){
@@ -731,10 +740,16 @@ async function sendMessage(){
   const email=document.getElementById('msgEmail').value.trim();
   const body=document.getElementById('msgBody').value.trim();
   if(!email||!body)return showToast('Email and message required','error');
+  const btn=document.querySelector('#tab-ask .btn');
+  btn.disabled=true;btn.textContent='Sending…';
   try{
-    await fetch(`${API}/messages`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({listingId:currentListing.id,fromEmail:email,fromName:name,fromRole:'buyer',body})});
-    showToast('Message sent!');document.getElementById('msgBody').value='';
-  }catch(e){showToast('Could not send message','error');}
+    const r=await fetch(`${API}/messages`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({listingId:currentListing.id,fromEmail:email,fromName:name,fromRole:'buyer',body})});
+    const d=await r.json();
+    if(!r.ok)throw new Error(d.error||'Server error');
+    showToast('Message sent! Seller will reply by email.');
+    document.getElementById('msgBody').value='';
+  }catch(e){showToast(e.message||'Could not send message','error');}
+  finally{btn.disabled=false;btn.textContent='Send Message';}
 }
 
 async function subscribeAlert(){

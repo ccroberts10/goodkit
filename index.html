@@ -111,6 +111,11 @@ body{font-family:'ABC Maxi Round','Nunito',system-ui,sans-serif;background:var(-
 .nav-logo{font-family:'ABC Maxi Round','Nunito',system-ui,sans-serif;font-weight:900;font-size:22px;color:#f5f5f0;text-decoration:none;letter-spacing:-0.5px;text-transform:none;}
 .nav-logo .dot{color:#F2C12E;}
 .nav-links{display:flex;align-items:center;gap:6px;}
+.nav-search{display:flex;align-items:center;background:rgba(255,255,255,0.08);border:1px solid rgba(255,255,255,0.12);border-radius:6px;padding:0 12px;gap:8px;height:36px;}
+.nav-search input{background:none;border:none;outline:none;color:#f5f5f0;font-size:13px;width:160px;font-family:'ABC Maxi Round','Nunito',system-ui,sans-serif;}
+.nav-search input::placeholder{color:rgba(245,245,240,0.4);}
+.nav-search svg{flex-shrink:0;opacity:0.5;}
+@media(max-width:600px){.nav-search{display:none;}}
 .btn{display:inline-flex;align-items:center;gap:6px;padding:9px 18px;border-radius:6px;font-family:'ABC Maxi Round','Nunito',system-ui,sans-serif;font-size:14px;font-weight:800;cursor:pointer;border:none;text-decoration:none;transition:all 0.12s;white-space:nowrap;text-transform:uppercase;letter-spacing:0.04em;}
 .btn-primary{background:#F2C12E;color:#0a0a0a;}
 .btn-primary:hover{background:#D9A820;}
@@ -229,10 +234,14 @@ footer{background:#0a0a0a;padding:40px 24px;display:flex;flex-direction:column;a
 <body>
 
 <nav class="nav">
-  <a href="#" class="nav-logo">goodkit<span class="dot">.</span></a>
+  <a href="/" class="nav-logo">goodkit<span class="dot">.</span></a>
+  <form class="nav-search" onsubmit="navSearch(event)">
+    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.35-4.35"/></svg>
+    <input type="search" placeholder="Search gear…" id="navSearchInput" autocomplete="off">
+  </form>
   <div class="nav-links">
     <a href="/marketplace" class="btn btn-ghost">Shop</a>
-    <a href="/sell" class="btn btn-primary">Sell Gear</a>
+    <a href="/sell-your-gear" class="btn btn-primary">Sell Gear</a>
   </div>
 </nav>
 
@@ -255,8 +264,9 @@ footer{background:#0a0a0a;padding:40px 24px;display:flex;flex-direction:column;a
     <p class="hero-sub">Buy and sell used bikes, helmets, apparel, and gear. Prepaid shipping. Flat 15% fee. Secure checkout.</p>
     <div class="hero-ctas">
       <a href="/marketplace" class="btn btn-primary btn-lg">Shop Gear</a>
-      <a href="/sell" class="btn btn-outline-white btn-lg">Start Selling</a>
+      <a href="/sell-your-gear" class="btn btn-outline-white btn-lg">Start Selling</a>
     </div>
+    <div id="heroStats" style="display:flex;gap:24px;margin-top:20px;flex-wrap:wrap;"></div>
     <div class="hero-divider">
       <span class="hero-divider-label">Categories</span>
       <div class="pills">
@@ -320,7 +330,7 @@ footer{background:#0a0a0a;padding:40px 24px;display:flex;flex-direction:column;a
         <h2 class="display">You keep 85%.<br>Always.</h2>
         <p class="section-sub">eBay takes up to 13.25% and buries the math. GoodKit is one flat rate — sell a $200 fork, walk with $170. No insertion fees, no featured listing upsells.</p>
         <div style="margin-top:32px;">
-          <a href="/sell" class="btn btn-primary btn-lg">Start Selling</a>
+          <a href="/sell-your-gear" class="btn btn-primary btn-lg">Start Selling</a>
         </div>
       </div>
       <div>
@@ -409,7 +419,7 @@ footer{background:#0a0a0a;padding:40px 24px;display:flex;flex-direction:column;a
   <h2>got gear<br>collecting dust?</h2>
   <p>List in minutes. Keep 85%. Shipping handled.</p>
   <div class="cta-btns">
-    <a href="/sell" class="btn btn-ink btn-lg">List Your Gear</a>
+    <a href="/sell-your-gear" class="btn btn-ink btn-lg">List Your Gear</a>
     <a href="/marketplace" class="btn btn-outline-dark btn-lg">Shop the Market</a>
   </div>
 </section>
@@ -418,7 +428,7 @@ footer{background:#0a0a0a;padding:40px 24px;display:flex;flex-direction:column;a
   <div class="footer-logo">goodkit<span class="dot">.</span></div>
   <div class="footer-links">
     <a href="/marketplace">Shop</a>
-    <a href="/sell">Sell</a>
+    <a href="/sell-your-gear">Sell</a>
     <a href="mailto:marketplace@good-kit.com">Contact</a>
     <a href="/privacy">Privacy</a>
     <a href="/terms">Terms</a>
@@ -428,6 +438,18 @@ footer{background:#0a0a0a;padding:40px 24px;display:flex;flex-direction:column;a
 
 <script>
 const API = window.location.hostname === 'localhost' ? 'http://localhost:3000' : 'https://api.good-kit.com';
+function navSearch(e){e.preventDefault();const q=document.getElementById('navSearchInput').value.trim();if(q)window.location.href='/marketplace?q='+encodeURIComponent(q);}
+async function loadStats(){
+  try{
+    const r=await fetch(`${API}/stats`);
+    const d=await r.json();
+    const el=document.getElementById('heroStats');
+    if(!el||!d.listings)return;
+    const stat=(n,label)=>`<div style="display:flex;flex-direction:column;gap:2px;"><span style="font-family:'Space Mono',monospace;font-size:16px;font-weight:700;color:#F2C12E;">${n}</span><span style="font-size:11px;color:rgba(245,245,240,0.6);letter-spacing:0.08em;text-transform:uppercase;">${label}</span></div>`;
+    el.innerHTML=stat(d.listings,'active listings')+stat(d.sales,'items sold')+stat(d.sellers,'sellers');
+  }catch(e){}
+}
+loadStats();
 async function loadRecent() {
   try {
     const res = await fetch(`${API}/listings?limit=6`);
