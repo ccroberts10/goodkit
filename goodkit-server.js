@@ -931,6 +931,8 @@ app.get('/marketplace', (req, res) => res.sendFile(path.join(__dirname, 'goodkit
 app.get('/sell',            (req, res) => res.sendFile(path.join(__dirname, 'goodkit-seller-portal.html')));
 app.get('/sell-your-gear', (req, res) => res.sendFile(path.join(__dirname, 'sell-your-gear.html')));
 app.get('/about',          (req, res) => res.sendFile(path.join(__dirname, 'about.html')));
+app.get('/terms',          (req, res) => res.sendFile(path.join(__dirname, 'terms.html')));
+app.get('/privacy',        (req, res) => res.sendFile(path.join(__dirname, 'privacy.html')));
 app.get('/seller-portal',  (req, res) => res.sendFile(path.join(__dirname, 'goodkit-seller-portal.html')));
 app.get('/health', (req, res) => res.json({ status: 'GoodKit Marketplace running' }));
 
