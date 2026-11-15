@@ -450,7 +450,7 @@ nav{position:sticky;top:0;z-index:100;background:var(--ink);display:flex;align-i
         </div>
         <div class="fee-box" id="feeCalc">
           <div class="fee-row"><span>Your price</span><span id="fcPrice">—</span></div>
-          <div class="fee-row"><span>Platform fee (15%)</span><span id="fcFee">—</span></div>
+          <div class="fee-row"><span id="fcFeeLabel">Platform fee (15%)</span><span id="fcFee">—</span></div>
           <div class="fee-row total"><span>You keep</span><span class="orange" id="fcNet">—</span></div>
         </div>
         <input type="hidden" id="newWeight" value="xs">
@@ -543,7 +543,18 @@ async function loadDash(tok){
     document.getElementById('loginScreen').style.display='none';
     document.getElementById('dashScreen').style.display='block';
     document.getElementById('navEmail').textContent=SELLER.email||'';
-    renderStripeBanner();
+    // Founding seller badge
+    const isFounding = d.account && d.account.isFounding;
+    const existingBadge = document.getElementById('foundingBadge');
+    if(existingBadge) existingBadge.remove();
+    if(isFounding){
+      const badge = document.createElement('div');
+      badge.id = 'foundingBadge';
+      badge.style.cssText='display:inline-flex;align-items:center;gap:6px;background:#F2C12E;color:#0a0a0a;font-size:11px;font-weight:700;letter-spacing:1.2px;text-transform:uppercase;padding:5px 10px;border-radius:4px;margin-left:10px;';
+      badge.innerHTML='★ Founding Seller · 90/10 locked';
+      document.getElementById('navEmail').after(badge);
+    }
+    renderStripeBanner(d.account);
     renderStats(d.listings||[], d.sales||[]);
     renderListings(d.listings||[]);
     renderOffers(d.offers||[], d.listings||[]);
@@ -573,13 +584,15 @@ async function loadCommunities(){
 
 function logout(){clearS();SESSION=null;SELLER=null;showLogin();}
 
-function renderStripeBanner(){
+function renderStripeBanner(account){
   const ok=SELLER&&SELLER.stripe_connected;
+  const pct=(account&&account.sellerPct)||85;
+  const tierLabel=(account&&account.isFounding)?` <span style="background:#F2C12E;color:#0a0a0a;font-size:10px;font-weight:700;padding:2px 6px;border-radius:3px;margin-left:6px;">FOUNDING RATE</span>`:'';
   document.getElementById('stripeDot').className='stripe-dot'+(ok?' ok':'');
   document.getElementById('stripeBanner').className='stripe-banner'+(ok?' connected':'');
   document.getElementById('stripeBannerText').innerHTML=ok
-    ?'<strong>Payouts connected</strong> — you\'ll get paid directly to your bank within 2 days of each sale.'
-    :'<strong>Set up payouts</strong> — takes 2 minutes. You keep 85% of every sale, deposited straight to your bank.';
+    ?`<strong>Payouts connected</strong> — you keep <strong>${pct}%</strong> of every sale, deposited straight to your bank within 2 days.${tierLabel}`
+    :`<strong>Set up payouts</strong> — takes 2 minutes. You keep <strong>${pct}%</strong> of every sale, deposited straight to your bank.${tierLabel}`;
   document.getElementById('stripeBtn').hidden=!!ok;
   renderShipBanner();
 }
@@ -1145,9 +1158,13 @@ function selectTier(el){
 function updateFeeCalc(){
   const price=parseFloat(document.getElementById('newPrice').value)||0;
   if(!price){['fcPrice','fcFee','fcNet'].forEach(id=>document.getElementById(id).textContent='—');return;}
+  const isFounding = SELLER && SELLER.seller_tier === 'founding';
+  const feePct = isFounding ? 0.10 : 0.15;
+  const keepPct = isFounding ? 0.90 : 0.85;
+  document.getElementById('fcFeeLabel').textContent = `Platform fee (${isFounding?'10%':'15%'})`;
   document.getElementById('fcPrice').textContent='$'+price.toFixed(2);
-  document.getElementById('fcFee').textContent='-$'+(price*0.12).toFixed(2);
-  document.getElementById('fcNet').textContent='$'+(price*0.88).toFixed(2);
+  document.getElementById('fcFee').textContent='-$'+(price*feePct).toFixed(2);
+  document.getElementById('fcNet').textContent='$'+(price*keepPct).toFixed(2);
 }
 
 const SIZE_MAP = {

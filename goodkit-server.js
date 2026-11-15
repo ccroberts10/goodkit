@@ -548,6 +548,9 @@ db.exec(`
   // Rep/seller profile pages
   `ALTER TABLE seller_sessions ADD COLUMN rep_slug TEXT DEFAULT NULL`,
   `ALTER TABLE seller_sessions ADD COLUMN rep_bio TEXT DEFAULT NULL`,
+  // Founding seller tier
+  `ALTER TABLE seller_sessions ADD COLUMN seller_tier TEXT DEFAULT 'standard'`,
+  `ALTER TABLE shop_accounts ADD COLUMN seller_tier TEXT DEFAULT 'standard'`,
 ].forEach(sql => { try { db.exec(sql); } catch(e) {} });
 
 // One-time: auto-tag brands on existing listings that have no brand set
@@ -621,17 +624,26 @@ function detectBrand(title, keywords) {
 // ── FEE STRUCTURE ────────────────────────────────────────────────────────────
 // Three-tier model:
 //   Individual sellers:  85% seller / 15% GoodKit (13% platform + 2% CCX if applicable)
+//   Founding sellers:    90% seller / 10% GoodKit (locked in for life, first 50 accounts)
 //   Shop / pro athlete:  65% seller / 35% GoodKit
 //   Pro consign (drop-off): 75% athlete / 25% GoodKit (GoodKit posts, athlete drops off)
 // Shipping passes through at cost (flat tier price charged to buyer).
 // Stripe fee (~2.9% + $0.30) comes out of GoodKit's platform share.
-function calculateSplit(itemPriceCents, shippingCents, ccxCode, accountType) {
+const FOUNDING_SELLER_CAP = 50;
+function getFoundingSellerCount() {
+  const r1 = db.prepare("SELECT COUNT(*) as n FROM seller_sessions WHERE seller_tier='founding'").get();
+  const r2 = db.prepare("SELECT COUNT(*) as n FROM shop_accounts WHERE seller_tier='founding'").get();
+  return (r1?.n || 0) + (r2?.n || 0);
+}
+function calculateSplit(itemPriceCents, shippingCents, ccxCode, accountType, sellerTier) {
   shippingCents = shippingCents || 0;
   const isShop        = accountType === 'shop';
   const isProConsign  = accountType === 'pro_consign';
+  const isFounding    = sellerTier === 'founding';
   // pro_athlete: athlete lists own gear, same 85/15 as individual sellers
-  const sellerPct     = isShop ? 65 : (isProConsign ? 75 : 85);
-  const platformPct   = isShop ? 35 : (isProConsign ? 25 : 15);
+  // founding sellers: 90/10 regardless of account type (individual or shop)
+  const sellerPct     = isFounding ? 90 : (isShop ? 65 : (isProConsign ? 75 : 85));
+  const platformPct   = isFounding ? 10 : (isShop ? 35 : (isProConsign ? 25 : 15));
   const totalCents    = itemPriceCents + shippingCents;
   const stripeFee     = Math.round(totalCents * 0.029 + 30);
   const platformFee   = Math.round(itemPriceCents * (platformPct / 100));
@@ -1373,6 +1385,7 @@ app.get('/seller/portal', (req, res) => {
     if (new Date(session.expires_at) < new Date()) return res.status(401).json({ error: 'Session expired' });
     const email    = session.email;
     const accountType = session.account_type || 'individual';
+    const sellerTier  = session.seller_tier || 'standard';
     const shopSlug    = session.shop_slug || null;
     const listings = db.prepare("SELECT * FROM listings WHERE seller_email = ? ORDER BY created_at DESC").all(email)
       .map(l => ({
@@ -1380,7 +1393,7 @@ app.get('/seller/portal', (req, res) => {
         photos: JSON.parse(l.photos || '[]'),
         price:  l.price / 100,
         shipping_estimate: (l.shipping_estimate || 0) / 100,
-        split:  calculateSplit(l.price, l.shipping_estimate || 0, null, accountType),
+        split:  calculateSplit(l.price, l.shipping_estimate || 0, null, accountType, sellerTier),
         label:  getLabelTier(l.weight_oz)
       }));
     const sales = db.prepare("SELECT s.*, l.title, l.photos FROM sales s JOIN listings l ON s.listing_id=l.id WHERE l.seller_email=? ORDER BY s.created_at DESC").all(email)
@@ -1411,6 +1424,7 @@ app.get('/seller/portal', (req, res) => {
           name: listings[0]?.seller_name || email,
           stripe_account_id: stripeId,
           stripe_connected: !!(stripeId && stripeId.startsWith('acct_')),
+          seller_tier: sellerTier,
           shipping_address: addrSession ? {
             name:    addrSession.ship_name,
             street1: addrSession.ship_street1,
@@ -1425,8 +1439,10 @@ app.get('/seller/portal', (req, res) => {
         type:       accountType,
         isShop:     accountType === 'shop',
         shopSlug:   shopSlug,
-        sellerPct:  accountType === 'shop' ? 65 : 85,
-        platformPct: accountType === 'shop' ? 35 : 15,
+        sellerTier: sellerTier,
+        isFounding: sellerTier === 'founding',
+        sellerPct:  sellerTier === 'founding' ? 90 : (accountType === 'shop' ? 65 : 85),
+        platformPct: sellerTier === 'founding' ? 10 : (accountType === 'shop' ? 35 : 15),
         storefrontUrl: shopSlug ? `${SITE_URL}/shop/${shopSlug}` : null
       },
       stats: {
@@ -1619,7 +1635,8 @@ app.post('/checkout', async (req, res) => {
     const buyerWantsPickup = deliveryType === 'local_pickup' && listing.allows_pickup;
     const resolvedDeliveryType = buyerWantsPickup ? 'local_pickup' : 'ship';
     const shippingCents = buyerWantsPickup ? 0 : (listing.shipping_estimate || 0);
-    const split         = calculateSplit(listing.price, shippingCents, listing.ccx_code);
+    const sellerSession = db.prepare("SELECT seller_tier FROM seller_sessions WHERE email=? ORDER BY created_at DESC LIMIT 1").get(listing.seller_email);
+    const split         = calculateSplit(listing.price, shippingCents, listing.ccx_code, sellerSession?.account_type || 'individual', sellerSession?.seller_tier || 'standard');
     const totalCharge   = listing.price + shippingCents;
     const labelInfo     = getLabelTier(listing.weight_oz);
 
@@ -2548,6 +2565,57 @@ app.patch('/admin/listings/:id/stripe-account', (req, res) => {
   if (adminKey !== process.env.ADMIN_KEY) return res.status(401).json({ error: 'Unauthorized' });
   try { db.prepare("UPDATE listings SET stripe_account_id=? WHERE id=?").run(stripe_account_id || null, req.params.id); res.json({ success: true }); }
   catch(err) { res.status(500).json({ error: err.message }); }
+});
+
+// ── FOUNDING SELLER MANAGEMENT ───────────────────────────────────────────────
+
+// GET /admin/founding-sellers — list all founding sellers + count vs cap
+app.get('/admin/founding-sellers', (req, res) => {
+  const key = req.query.adminKey || req.query.key;
+  if (key !== process.env.ADMIN_KEY) return res.status(401).json({ error: 'Unauthorized' });
+  try {
+    const individuals = db.prepare("SELECT email, name, created_at, seller_tier FROM seller_sessions WHERE seller_tier='founding' ORDER BY created_at ASC").all();
+    const shops       = db.prepare("SELECT contact_email as email, shop_name as name, created_at, seller_tier FROM shop_accounts WHERE seller_tier='founding' ORDER BY created_at ASC").all();
+    const count       = individuals.length + shops.length;
+    res.json({ count, cap: FOUNDING_SELLER_CAP, spots_remaining: Math.max(0, FOUNDING_SELLER_CAP - count), individuals, shops });
+  } catch(err) { res.status(500).json({ error: err.message }); }
+});
+
+// POST /admin/founding-sellers/grant — upgrade a seller to founding tier
+// Body: { adminKey, email, type: 'individual'|'shop' }
+app.post('/admin/founding-sellers/grant', (req, res) => {
+  const { adminKey, email, type } = req.body;
+  if (adminKey !== process.env.ADMIN_KEY) return res.status(401).json({ error: 'Unauthorized' });
+  if (!email) return res.status(400).json({ error: 'email required' });
+  try {
+    const count = getFoundingSellerCount();
+    if (count >= FOUNDING_SELLER_CAP) return res.status(400).json({ error: `Founding seller cap of ${FOUNDING_SELLER_CAP} reached` });
+    if (type === 'shop') {
+      const shop = db.prepare("SELECT id FROM shop_accounts WHERE contact_email=?").get(email);
+      if (!shop) return res.status(404).json({ error: 'Shop not found' });
+      db.prepare("UPDATE shop_accounts SET seller_tier='founding' WHERE contact_email=?").run(email);
+    } else {
+      const seller = db.prepare("SELECT email FROM seller_sessions WHERE email=?").get(email);
+      if (!seller) return res.status(404).json({ error: 'Seller not found' });
+      db.prepare("UPDATE seller_sessions SET seller_tier='founding' WHERE email=?").run(email);
+    }
+    res.json({ success: true, email, tier: 'founding', spots_remaining: FOUNDING_SELLER_CAP - count - 1 });
+  } catch(err) { res.status(500).json({ error: err.message }); }
+});
+
+// POST /admin/founding-sellers/revoke — revert a founding seller to standard
+app.post('/admin/founding-sellers/revoke', (req, res) => {
+  const { adminKey, email, type } = req.body;
+  if (adminKey !== process.env.ADMIN_KEY) return res.status(401).json({ error: 'Unauthorized' });
+  if (!email) return res.status(400).json({ error: 'email required' });
+  try {
+    if (type === 'shop') {
+      db.prepare("UPDATE shop_accounts SET seller_tier='standard' WHERE contact_email=?").run(email);
+    } else {
+      db.prepare("UPDATE seller_sessions SET seller_tier='standard' WHERE email=?").run(email);
+    }
+    res.json({ success: true, email, tier: 'standard' });
+  } catch(err) { res.status(500).json({ error: err.message }); }
 });
 
 app.get('/admin/sales', (req, res) => {
