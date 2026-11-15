@@ -203,8 +203,28 @@ nav{position:sticky;top:0;z-index:100;background:var(--ink);display:flex;align-i
 
     <div id="stripeBanner" class="stripe-banner">
       <div class="stripe-dot" id="stripeDot"></div>
-      <div id="stripeBannerText"></div>
-      <button id="stripeBtn" class="btn btn-primary btn-xs" style="margin-left:auto;" onclick="connectStripe()" hidden>Connect Stripe &rarr;</button>
+      <div id="stripeBannerText" style="flex:1;"></div>
+      <button id="stripeBtn" class="btn btn-primary btn-xs" style="margin-left:auto;white-space:nowrap;" onclick="openPayoutSetup()" hidden>Set Up Payouts →</button>
+    </div>
+
+    <!-- Payout setup modal -->
+    <div id="payoutModal" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,0.6);z-index:200;align-items:center;justify-content:center;padding:20px;">
+      <div style="background:var(--bg);border-radius:12px;padding:28px;max-width:420px;width:100%;">
+        <h3 style="margin:0 0 6px;font-size:20px;">Get paid when your gear sells</h3>
+        <p style="font-size:14px;color:var(--muted);margin:0 0 20px;line-height:1.6;">Takes about 2 minutes. Stripe handles all the banking — GoodKit never sees your account info. Payouts land in your bank within 2 days of a sale.</p>
+        <div style="background:var(--bg-warm);border-radius:8px;padding:14px 16px;margin-bottom:20px;font-size:13px;display:flex;flex-direction:column;gap:6px;">
+          <div>✓ &nbsp;Direct deposit to your bank account</div>
+          <div>✓ &nbsp;You keep 85% of every sale</div>
+          <div>✓ &nbsp;Paid out automatically — no waiting around</div>
+        </div>
+        <div style="margin-bottom:14px;">
+          <label style="font-size:13px;font-weight:600;display:block;margin-bottom:6px;">Your full name</label>
+          <input class="form-input" id="payoutName" placeholder="First Last" autocomplete="name" style="width:100%;">
+          <div style="font-size:11px;color:var(--muted);margin-top:4px;">Required by Stripe for identity verification</div>
+        </div>
+        <button class="btn btn-primary" style="width:100%;font-size:15px;padding:14px;" onclick="connectStripe()">Continue to Stripe →</button>
+        <button class="btn btn-ghost" style="width:100%;margin-top:8px;font-size:13px;" onclick="closePayoutModal()">I'll do this later</button>
+      </div>
     </div>
 
     <div id="shipBanner" class="stripe-banner" style="display:none;">
@@ -558,8 +578,8 @@ function renderStripeBanner(){
   document.getElementById('stripeDot').className='stripe-dot'+(ok?' ok':'');
   document.getElementById('stripeBanner').className='stripe-banner'+(ok?' connected':'');
   document.getElementById('stripeBannerText').innerHTML=ok
-    ?'<strong>Stripe connected</strong> — payouts go directly to your account.'
-    :'<strong>Connect Stripe</strong> to receive payouts when your gear sells.';
+    ?'<strong>Payouts connected</strong> — you\'ll get paid directly to your bank within 2 days of each sale.'
+    :'<strong>Set up payouts</strong> — takes 2 minutes. You keep 85% of every sale, deposited straight to your bank.';
   document.getElementById('stripeBtn').hidden=!!ok;
   renderShipBanner();
 }
@@ -614,22 +634,34 @@ async function saveShipAddress(){
   }catch(e){showToast('Could not save address','error');}
 }
 
+function openPayoutSetup(){
+  // Pre-fill name if we have it
+  const nameInput = document.getElementById('payoutName');
+  if(SELLER.name && SELLER.name !== SELLER.email) nameInput.value = SELLER.name;
+  document.getElementById('payoutModal').style.display='flex';
+  setTimeout(()=>{ if(!nameInput.value) nameInput.focus(); }, 100);
+}
+
+function closePayoutModal(){
+  document.getElementById('payoutModal').style.display='none';
+}
+
 async function connectStripe(){
-  // Need a real name for Stripe — prompt if we don't have one
-  let sellerName = (SELLER.name && SELLER.name !== SELLER.email) ? SELLER.name : '';
+  let sellerName = document.getElementById('payoutName')?.value.trim() || '';
   if(!sellerName){
-    sellerName = window.prompt('Enter your full name for Stripe payouts:','');
-    if(!sellerName || !sellerName.trim()) return;
-    sellerName = sellerName.trim();
-    // ensure last name exists — Stripe requires first + last
-    if(sellerName.indexOf(' ')===-1) sellerName = sellerName + ' Seller';
+    document.getElementById('payoutName').focus();
+    document.getElementById('payoutName').style.borderColor='#FF5C1A';
+    return;
   }
+  if(sellerName.indexOf(' ')===-1) sellerName = sellerName + ' Seller';
+  const btn = document.querySelector('#payoutModal .btn-primary');
+  btn.textContent='Connecting…'; btn.disabled=true;
   try{
     const r=await fetch(API+'/seller/onboard',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({email:SELLER.email,name:sellerName})});
     const d=await r.json();
     if(d.url) window.location.href=d.url;
-    else showToast(d.error||'Could not connect Stripe','error');
-  }catch(e){showToast('Could not connect Stripe','error');}
+    else { showToast(d.error||'Could not connect payouts','error'); btn.textContent='Continue to Stripe →'; btn.disabled=false; }
+  }catch(e){ showToast('Could not connect payouts','error'); btn.textContent='Continue to Stripe →'; btn.disabled=false; }
 }
 
 async function loadDashData(){
@@ -1169,7 +1201,7 @@ async function submitListing(e){
   if(!titleVal){showToast('Please add a title','error');return;}
   if(!priceVal||parseFloat(priceVal)<1){showToast('Price must be at least $1','error');return;}
   if(!photoFiles.length){showToast('Please add at least one photo','error');return;}
-  if(!SELLER?.stripe_connected){showToast('Connect Stripe first to receive payouts','error');return;}
+  if(!SELLER?.stripe_connected){showToast('Set up payouts first — takes 2 minutes','error');openPayoutSetup();return;}
   const qty=parseInt(document.getElementById('newQty').value)||1;
   const btn=document.getElementById('submitBtn');
   btn.disabled=true;
