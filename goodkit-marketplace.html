@@ -96,7 +96,8 @@ nav{position:sticky;top:0;z-index:100;background:var(--ink);display:flex;align-i
 .spinner{width:30px;height:30px;border:2.5px solid var(--border);border-top-color:var(--orange);border-radius:50%;animation:spin 0.7s linear infinite;margin:48px auto;}
 @keyframes spin{to{transform:rotate(360deg);}}
 .empty{text-align:center;padding:48px 24px;color:var(--muted);font-size:14px;}
-@media(max-width:600px){nav{padding:0 16px;}}
+@media(max-width:600px){nav{padding:0 16px;}.nav-links{display:none;position:absolute;top:calc(56px + env(safe-area-inset-top,0px));left:0;right:0;background:var(--ink);border-bottom:1px solid rgba(255,255,255,0.1);flex-direction:column;gap:0;padding:8px 16px 12px;z-index:200;}.nav-links.open{display:flex;}.nav-links a{padding:10px 0;border-bottom:1px solid rgba(255,255,255,0.06);font-size:14px;}.nav-links a:last-child{border-bottom:none;}.nav-hamburger{display:flex;flex-direction:column;gap:4px;cursor:pointer;padding:8px 4px;background:none;border:none;}.nav-hamburger span{display:block;width:20px;height:2px;background:#fff;border-radius:2px;transition:transform .2s,opacity .2s;}.nav-hamburger.open span:nth-child(1){transform:translateY(6px) rotate(45deg);}.nav-hamburger.open span:nth-child(2){opacity:0;}.nav-hamburger.open span:nth-child(3){transform:translateY(-6px) rotate(-45deg);}}
+@media(min-width:601px){.nav-hamburger{display:none;}.nav-links{display:flex!important;}}
 
 
 /* FILTERS */
@@ -185,10 +186,13 @@ nav{position:sticky;top:0;z-index:100;background:var(--ink);display:flex;align-i
 
 <nav>
   <a href="/" class="nav-logo">goodkit<span class="dot">.</span></a>
-  <div style="display:flex;gap:8px;">
-    <a href="goodkit-seller-portal.html" class="btn btn-ghost btn-sm">My Portal</a>
-    <a href="goodkit-seller-portal.html" class="btn btn-primary btn-sm">Sell Gear</a>
+  <div class="nav-links" id="navLinks" style="display:flex;gap:8px;">
+    <a href="/sell-your-gear" class="btn btn-ghost btn-sm">Sell Gear</a>
+    <a href="goodkit-seller-portal.html" class="btn btn-primary btn-sm">My Portal</a>
   </div>
+  <button class="nav-hamburger" id="navHamburger" aria-label="Menu" onclick="toggleNav()">
+    <span></span><span></span><span></span>
+  </button>
 </nav>
 
 <div class="alert-bar">
@@ -282,9 +286,14 @@ async function loadListings(){
     allListings=data.listings||[];
     const params=new URLSearchParams(location.search);
     const qParam=params.get('q');if(qParam){const si=document.getElementById('searchInput');if(si)si.value=qParam;}
+    // Restore saved filter/search state (from modal close)
+    try{const saved=sessionStorage.getItem('gk_state');if(saved){const s=JSON.parse(saved);sessionStorage.removeItem('gk_state');if(s.q&&!qParam){const si=document.getElementById('searchInput');if(si)si.value=s.q;}if(s.cat){const el=document.getElementById('catFilter');if(el)[...el.options].forEach(o=>{if(o.value===s.cat)o.selected=true;});}}}catch(e){}
     const hashCat=location.hash.startsWith('#cat=')?decodeURIComponent(location.hash.slice(5)):'';
     if(hashCat){const el=document.getElementById('catFilter');if(el)[...el.options].forEach(o=>{if(o.value===hashCat||o.text===hashCat)o.selected=true;});}
     filterListings();
+    // Auto-open listing if hash is a numeric id (e.g. from listing detail page)
+    const hash=location.hash.slice(1);
+    if(hash&&/^\d+$/.test(hash)){openListing(parseInt(hash,10));}
   }catch(e){
     document.getElementById('listingsGrid').innerHTML=`<div class="empty" style="grid-column:1/-1"><strong>Can't reach server.</strong><br>Make sure the API is running.</div>`;
   }
@@ -362,6 +371,13 @@ function renderGrid(listings){
 
 async function openListing(id){
   try{
+    // Save scroll and filter state before opening modal
+    try{
+      sessionStorage.setItem('gk_scroll',String(window.scrollY));
+      const si=document.getElementById('searchInput');
+      const cf=document.getElementById('catFilter');
+      sessionStorage.setItem('gk_state',JSON.stringify({q:si?.value||'',cat:cf?.value||''}));
+    }catch(e){}
     const res=await fetch(`${API}/listings/${id}`);
     const data=await res.json();
     currentListing=data.listing;
@@ -429,7 +445,7 @@ function renderModal(l){
       <button class="btn btn-primary" onclick="openCheckout()">Buy Now — $${total}</button>
       <button class="btn btn-outline" onclick="openOffer()">Make an Offer</button>
     </div>
-    <div class="modal-fine">seller keeps 85% · secured by Stripe</div>
+    <div class="modal-fine">seller keeps 85% · secured by Stripe · <a href="/listing/${l.id}-${encodeURIComponent((l.title||'').toLowerCase().replace(/[^a-z0-9]+/g,'-').replace(/^-|-$/g,''))}" style="color:var(--muted);text-decoration:underline;" onclick="event.stopPropagation()">view listing page ↗</a></div>
     <div style="display:flex;align-items:center;justify-content:center;gap:6px;margin-top:8px;padding:7px 12px;background:rgba(26,107,60,0.07);border-radius:6px;border:1px solid rgba(26,107,60,0.18);">
       <span style="font-size:14px;">🛡️</span>
       <span style="font-size:11px;color:#1A6B3C;font-weight:600;">72-hour buyer protection — <a href="/flag-purchase.html" style="color:#1A6B3C;" onclick="event.stopPropagation()">learn more</a></span>
@@ -450,7 +466,14 @@ function switchTab(el,name){
   el.classList.add('active');
   document.getElementById('tab-'+name)?.classList.add('active');
 }
-function closeModal(){document.getElementById('listingModal').classList.remove('open');document.body.style.overflow='';}
+function closeModal(){
+  document.getElementById('listingModal').classList.remove('open');
+  document.body.style.overflow='';
+  // Restore scroll position
+  try{const y=parseInt(sessionStorage.getItem('gk_scroll')||'0',10);window.scrollTo(0,y);}catch(e){}
+  // Clear hash without triggering reload
+  if(location.hash&&/^#\d+$/.test(location.hash)){history.replaceState(null,'',location.pathname+location.search);}
+}
 function galleryNav(dir){
   const strip=document.getElementById('photoStrip');if(!strip)return;
   const photos=window._galleryPhotos||[];
@@ -772,6 +795,23 @@ document.querySelectorAll('.modal-overlay').forEach(o=>{
   o.addEventListener('click',e=>{if(e.target===o){closeModal();closeCheckout();closeOffer();}});
 });
 document.addEventListener('keydown',e=>{if(e.key==='Escape'){closeModal();closeCheckout();closeOffer();}});
+
+function toggleNav(){
+  const links=document.getElementById('navLinks');
+  const burger=document.getElementById('navHamburger');
+  if(!links||!burger)return;
+  const open=links.classList.toggle('open');
+  burger.classList.toggle('open',open);
+  burger.setAttribute('aria-expanded',open);
+}
+// Close nav when clicking outside
+document.addEventListener('click',function(e){
+  const links=document.getElementById('navLinks');
+  const burger=document.getElementById('navHamburger');
+  if(links&&burger&&links.classList.contains('open')&&!links.contains(e.target)&&!burger.contains(e.target)){
+    links.classList.remove('open');burger.classList.remove('open');
+  }
+});
 
 loadListings();
 </script><script>if("serviceWorker"in navigator){navigator.serviceWorker.register("/sw.js");}</script>

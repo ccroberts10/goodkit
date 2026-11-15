@@ -111,6 +111,18 @@ body{font-family:'ABC Maxi Round','Nunito',system-ui,sans-serif;background:var(-
 .nav-logo{font-family:'ABC Maxi Round','Nunito',system-ui,sans-serif;font-weight:900;font-size:22px;color:#f5f5f0;text-decoration:none;letter-spacing:-0.5px;text-transform:none;}
 .nav-logo .dot{color:#F2C12E;}
 .nav-links{display:flex;align-items:center;gap:6px;}
+.nav-hamburger{display:none;flex-direction:column;gap:4px;cursor:pointer;padding:8px 4px;background:none;border:none;}
+.nav-hamburger span{display:block;width:20px;height:2px;background:#fff;border-radius:2px;transition:transform .2s,opacity .2s;}
+.nav-hamburger.open span:nth-child(1){transform:translateY(6px) rotate(45deg);}
+.nav-hamburger.open span:nth-child(2){opacity:0;}
+.nav-hamburger.open span:nth-child(3){transform:translateY(-6px) rotate(-45deg);}
+@media(max-width:480px){
+  .nav-hamburger{display:flex;}
+  .nav-links{display:none;position:fixed;top:calc(56px + env(safe-area-inset-top,0px));left:0;right:0;background:#0a0a0a;border-bottom:2px solid #333;flex-direction:column;align-items:stretch;gap:0;padding:8px 16px 12px;z-index:200;}
+  .nav-links.open{display:flex;}
+  .nav-links a{padding:10px 0;border-bottom:1px solid #222;font-size:14px;text-align:left;}
+  .nav-links a:last-child{border-bottom:none;}
+}
 .hero-search-wrap{position:relative;max-width:560px;margin-bottom:36px;}
 .hero-search{display:flex;align-items:center;background:rgba(255,255,255,0.1);border:2px solid rgba(255,255,255,0.22);border-radius:8px;overflow:hidden;transition:border-color 0.15s;}
 .hero-search:focus-within{border-color:#F2C12E;background:rgba(255,255,255,0.14);}
@@ -238,10 +250,13 @@ footer{background:#0a0a0a;padding:40px 24px;display:flex;flex-direction:column;a
 
 <nav class="nav">
   <a href="/" class="nav-logo">goodkit<span class="dot">.</span></a>
-  <div class="nav-links">
+  <div class="nav-links" id="navLinks">
     <a href="/marketplace" class="btn btn-ghost">Shop</a>
     <a href="/sell-your-gear" class="btn btn-primary">Sell Gear</a>
   </div>
+  <button class="nav-hamburger" id="navHamburger" aria-label="Menu" onclick="toggleNav()">
+    <span></span><span></span><span></span>
+  </button>
 </nav>
 
 <section class="hero">
@@ -493,6 +508,20 @@ loadRecent();
     slides[cur].classList.add('active');
   },5500);
 })();
+function toggleNav(){
+  const links=document.getElementById('navLinks');
+  const burger=document.getElementById('navHamburger');
+  if(!links||!burger)return;
+  const open=links.classList.toggle('open');
+  burger.classList.toggle('open',open);
+}
+document.addEventListener('click',function(e){
+  const links=document.getElementById('navLinks');
+  const burger=document.getElementById('navHamburger');
+  if(links&&burger&&links.classList.contains('open')&&!links.contains(e.target)&&!burger.contains(e.target)){
+    links.classList.remove('open');burger.classList.remove('open');
+  }
+});
 </script><script>if("serviceWorker"in navigator){navigator.serviceWorker.register("/sw.js");}</script>
 </body>
 </html>
