@@ -240,6 +240,11 @@ nav{position:sticky;top:0;z-index:100;background:var(--ink);display:flex;align-i
       <div class="stat-tile"><div class="stat-val" id="statSales">—</div><div class="stat-label">Items sold</div></div>
       <div class="stat-tile"><div class="stat-val" id="statGross">—</div><div class="stat-label">Gross sales</div></div>
       <div class="stat-tile"><div class="stat-val" id="statNet">—</div><div class="stat-label">Your earnings</div></div>
+      <div class="stat-tile" id="walletTile" style="display:none;border-color:#FF5C1A;cursor:pointer;" onclick="switchTab('wallet')">
+        <div class="stat-val" id="statWallet" style="color:#FF5C1A;">—</div>
+        <div class="stat-label">Wallet balance</div>
+        <div id="statBuyingPower" style="font-size:11px;color:#888;margin-top:2px;"></div>
+      </div>
     </div>
 
     <div class="tabs">
@@ -247,6 +252,7 @@ nav{position:sticky;top:0;z-index:100;background:var(--ink);display:flex;align-i
       <div class="tab" onclick="switchTab('offers')">Offers</div>
       <div class="tab" onclick="switchTab('messages')">Messages</div>
       <div class="tab" onclick="switchTab('sales')">Sales</div>
+      <div class="tab" id="walletTab" style="display:none;" onclick="switchTab('wallet')">💰 Wallet</div>
       <div class="tab" onclick="switchTab('create')">+ List Gear</div>
     </div>
 
@@ -254,6 +260,7 @@ nav{position:sticky;top:0;z-index:100;background:var(--ink);display:flex;align-i
     <div class="pane" id="pane-offers"><div id="offersList"><div class="spinner"></div></div></div>
     <div class="pane" id="pane-messages"><div id="messagesList"><div class="spinner"></div></div></div>
     <div class="pane" id="pane-sales"><div id="salesList"><div class="spinner"></div></div></div>
+    <div class="pane" id="pane-wallet"><div id="walletContent"><div class="spinner"></div></div></div>
 
     <div class="pane" id="pane-create">
       <form class="create-form" onsubmit="submitListing(event)" novalidate>
@@ -477,6 +484,7 @@ let SESSION=null, SELLER=null, photoFiles=[];
 })();
 
 function tryGet(){ try{return localStorage.getItem('gk_session');}catch(e){return null;} }
+function getToken(){ return tryGet(); }
 function saveS(t){ try{localStorage.setItem('gk_session',t);}catch(e){} }
 function clearS(){ try{localStorage.removeItem('gk_session');}catch(e){} }
 
@@ -642,7 +650,64 @@ async function loadDashData(){
 
 function renderStatTiles(stats){
   if(stats.activeListings!==undefined) document.getElementById('statListings').textContent=stats.activeListings;
-  if(stats.totalEarned!==undefined) document.getElementById('statNet').textContent='$'+stats.totalEarned.toFixed(0);
+  if(stats.totalEarned!==undefined) document.getElementById('statNet').textContent='$'+(stats.totalEarned/100).toFixed(0);
+  if(stats.walletBalance!==undefined && stats.walletBalance>0){
+    document.getElementById('walletTile').style.display='block';
+    document.getElementById('walletTab').style.display='block';
+    document.getElementById('statWallet').textContent='$'+(stats.walletBalance/100).toFixed(2);
+    if(stats.walletBuyingPower>stats.walletBalance){
+      document.getElementById('statBuyingPower').textContent='$'+(stats.walletBuyingPower/100).toFixed(2)+' buying power here';
+    }
+    renderWallet(stats.walletBalance, stats.walletBuyingPower);
+  }
+}
+
+async function renderWallet(balance, buyingPower){
+  const el=document.getElementById('walletContent');
+  const fmt=c=>'$'+(c/100).toFixed(2);
+  el.innerHTML=`
+    <div style="max-width:480px;">
+      <div style="background:#fff;border:2px solid #FF5C1A;border-radius:12px;padding:24px;margin-bottom:16px;">
+        <div style="font-size:13px;color:#888;margin-bottom:4px;">Available balance</div>
+        <div style="font-size:36px;font-weight:700;color:#FF5C1A;">${fmt(balance)}</div>
+        ${buyingPower>balance?`<div style="font-size:14px;color:#1A1A14;margin-top:6px;">Worth <strong>${fmt(buyingPower)}</strong> when buying on GoodKit <span style="font-size:12px;color:#888;">(10% boost)</span></div>`:''}
+      </div>
+      <button class="btn btn-primary" style="width:100%;margin-bottom:8px;" onclick="requestPayout()">Transfer to Bank</button>
+      <p style="font-size:12px;color:#888;text-align:center;margin:0;">Free · transfers in 1–2 business days</p>
+      <div id="walletMsg" style="margin-top:12px;"></div>
+      <div style="margin-top:24px;">
+        <div style="font-size:13px;font-weight:600;margin-bottom:12px;">Wallet history</div>
+        <div id="walletHistory"><div class="spinner"></div></div>
+      </div>
+    </div>`;
+  // Load history
+  try{
+    const r=await fetch(API+'/seller/wallet',{headers:{'x-session-token':getToken()}});
+    const d=await r.json();
+    const hist=document.getElementById('walletHistory');
+    if(!d.events||!d.events.length){hist.innerHTML='<div style="color:#888;font-size:13px;">No transactions yet.</div>';return;}
+    hist.innerHTML=d.events.map(e=>`
+      <div style="display:flex;justify-content:space-between;padding:8px 0;border-bottom:1px solid var(--border);font-size:13px;">
+        <span style="color:#555;">${e.description||e.type}</span>
+        <span style="font-weight:600;color:${e.amount>0?'#2a7a2a':'#c0392b'};">${e.amount>0?'+':''}${fmt(e.amount)}</span>
+      </div>`).join('');
+  }catch(e){document.getElementById('walletHistory').innerHTML='<div style="color:#888;font-size:13px;">Could not load history.</div>';}
+}
+
+async function requestPayout(){
+  if(!confirm('Transfer your wallet balance to your bank? This is free and takes 1–2 business days.')) return;
+  try{
+    const r=await fetch(API+'/seller/wallet/payout',{method:'POST',headers:{'Content-Type':'application/json','x-session-token':getToken()},body:JSON.stringify({token:getToken()})});
+    const d=await r.json();
+    const msg=document.getElementById('walletMsg');
+    if(d.success){
+      msg.innerHTML=`<div style="background:#e6f4ea;border:1px solid #2a7a2a;border-radius:8px;padding:12px;color:#2a7a2a;font-size:13px;">✓ ${d.message}</div>`;
+      document.getElementById('statWallet').textContent='$0.00';
+      document.getElementById('walletTile').style.display='none';
+    } else {
+      msg.innerHTML=`<div style="background:#fde;border:1px solid #c0392b;border-radius:8px;padding:12px;color:#c0392b;font-size:13px;">${d.error}</div>`;
+    }
+  }catch(e){console.error('Payout error',e);}
 }
 
 function renderStats(listings,sales){

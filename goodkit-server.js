@@ -456,6 +456,47 @@ db.exec(`
   );
 `);
 
+// ── SELLER WALLET SCHEMA ─────────────────────────────────────────────────────
+db.exec(`
+  CREATE TABLE IF NOT EXISTS seller_wallet_events (
+    id TEXT PRIMARY KEY,
+    seller_email TEXT NOT NULL,
+    sale_id TEXT,
+    amount INTEGER NOT NULL,
+    type TEXT NOT NULL,
+    description TEXT,
+    created_at TEXT DEFAULT (datetime('now'))
+  );
+  CREATE TABLE IF NOT EXISTS seller_payout_requests (
+    id TEXT PRIMARY KEY,
+    seller_email TEXT NOT NULL,
+    amount INTEGER NOT NULL,
+    status TEXT DEFAULT 'pending',
+    notes TEXT,
+    created_at TEXT DEFAULT (datetime('now')),
+    processed_at TEXT
+  );
+  CREATE TABLE IF NOT EXISTS brand_pages (
+    id TEXT PRIMARY KEY,
+    slug TEXT NOT NULL UNIQUE,
+    name TEXT NOT NULL,
+    tagline TEXT DEFAULT '',
+    logo_url TEXT DEFAULT '',
+    accent_color TEXT DEFAULT '#FF5C1A',
+    created_at TEXT DEFAULT (datetime('now'))
+  );
+  CREATE TABLE IF NOT EXISTS rep_pages (
+    id TEXT PRIMARY KEY,
+    slug TEXT NOT NULL UNIQUE,
+    seller_email TEXT NOT NULL UNIQUE,
+    name TEXT NOT NULL,
+    bio TEXT DEFAULT '',
+    logo_url TEXT DEFAULT '',
+    brands TEXT DEFAULT '[]',
+    created_at TEXT DEFAULT (datetime('now'))
+  );
+`);
+
 // Ensure listing_action_tokens table exists (belt-and-suspenders for existing DBs)
 db.exec(`
   CREATE TABLE IF NOT EXISTS listing_action_tokens (
@@ -497,7 +538,26 @@ db.exec(`
   `ALTER TABLE shop_accounts ADD COLUMN total_earned INTEGER DEFAULT 0`,
   // Stripe status on shop_accounts
   `ALTER TABLE shop_accounts ADD COLUMN stripe_status TEXT DEFAULT 'no_stripe'`,
+  // Seller wallet
+  `ALTER TABLE seller_sessions ADD COLUMN wallet_balance INTEGER DEFAULT 0`,
+  `ALTER TABLE seller_sessions ADD COLUMN wallet_total_earned INTEGER DEFAULT 0`,
+  // Brand tagging on listings
+  `ALTER TABLE listings ADD COLUMN brand TEXT DEFAULT NULL`,
+  // Rep/seller profile pages
+  `ALTER TABLE seller_sessions ADD COLUMN rep_slug TEXT DEFAULT NULL`,
+  `ALTER TABLE seller_sessions ADD COLUMN rep_bio TEXT DEFAULT NULL`,
 ].forEach(sql => { try { db.exec(sql); } catch(e) {} });
+
+// One-time: auto-tag brands on existing listings that have no brand set
+try {
+  const untagged = db.prepare("SELECT id, title, keywords FROM listings WHERE brand IS NULL AND status='approved'").all();
+  let tagged = 0;
+  for (const l of untagged) {
+    const brand = detectBrand(l.title, l.keywords);
+    if (brand) { db.prepare("UPDATE listings SET brand=? WHERE id=?").run(brand, l.id); tagged++; }
+  }
+  if (tagged > 0) console.log(`[migration] Auto-tagged ${tagged} listings with brands`);
+} catch(e) { console.error('[migration] brand auto-tag failed:', e.message); }
 
 // One-time: clear old DBP stripe_account_id values so sellers re-onboard with new GoodKit Stripe account
 // Only clears IDs that start with 'acct_' (Stripe Connect express accounts from DBP)
@@ -524,6 +584,36 @@ function getLabelTier(weightOz) {
   if (weightOz <= 80)               return { tier: 'sm', ...LABEL_TIERS.sm };
   if (weightOz <= 320)              return { tier: 'md', ...LABEL_TIERS.md };
   return                                   { tier: 'lg', ...LABEL_TIERS.lg };
+}
+
+// ── BRAND AUTO-DETECTION ─────────────────────────────────────────────────────
+const KNOWN_BRANDS = [
+  'Fox','Fox Racing','RockShox','Shimano','SRAM','Trek','Specialized','Giant',
+  'Santa Cruz','Yeti','Pivot','Ibis','Evil','Guerrilla Gravity','Transition',
+  'Cannondale','Scott','Orbea','Norco','Kona','Surly','Salsa','All-City',
+  'Bontrager','Race Face','e*thirteen','Industry Nine','Hope','Chris King',
+  'Cane Creek','DVO','MRP','Manitou','Marzocchi','SR Suntour','X-Fusion',
+  'TRP','Magura','Hayes','Avid','Formula','Galfer','Swissstop',
+  'Maxxis','Continental','Schwalbe','WTB','Teravail','Panaracer',
+  'Ergon','Fizik','Selle Italia','WTB','Brooks','Fabric','Chromag',
+  'ODI','ESI','Renthal','Deity','Spank','Burgtec',
+  'Garmin','Wahoo','Polar','Suunto','Sigma',
+  'Giro','Bell','Fox Helmets','POC','Smith','Leatt','Troy Lee Designs','TLD',
+  'Pearl Izumi','Castelli','Rapha','Voler','Louis Garneau','Craft','Assos',
+  '7iDP','Alpinestars','Fox Apparel','O\'Neal','Fasthouse','100%','Oakley',
+  'Thule','Yakima','Kuat','1UP USA','RockyMounts',
+  'Topeak','Silca','Park Tool','Pedro\'s','Finish Line','Muc-Off',
+  'CamelBak','Osprey','Evoc','Dakine','Chrome','Timbuk2',
+  'Clif','Skratch','Tailwind','GU','Hammer',
+  'Bosch','Shimano Steps','Brose','Specialized Turbo','Fazua',
+];
+
+function detectBrand(title, keywords) {
+  const text = `${title} ${keywords || ''}`.toLowerCase();
+  for (const brand of KNOWN_BRANDS) {
+    if (text.includes(brand.toLowerCase())) return brand;
+  }
+  return null;
 }
 
 // ── FEE STRUCTURE ────────────────────────────────────────────────────────────
@@ -987,6 +1077,195 @@ function handleVerifyToken(req, res) {
 app.get('/seller/verify-token', handleVerifyToken);
 app.get('/seller/auth/verify',  handleVerifyToken);
 
+// ── SELLER WALLET ─────────────────────────────────────────────────────────────
+
+// Get wallet balance + history
+app.get('/seller/wallet', (req, res) => {
+  const token = req.headers['x-session-token'] || req.query.token;
+  if (!token) return res.status(401).json({ error: 'Token required' });
+  const session = db.prepare("SELECT * FROM seller_sessions WHERE token=? AND used=1").get(token);
+  if (!session || session.role !== 'seller') return res.status(401).json({ error: 'Invalid session' });
+  if (new Date(session.expires_at) < new Date()) return res.status(401).json({ error: 'Session expired' });
+  try {
+    const events = db.prepare("SELECT * FROM seller_wallet_events WHERE seller_email=? ORDER BY created_at DESC LIMIT 50").all(session.email);
+    const pending = db.prepare("SELECT * FROM seller_payout_requests WHERE seller_email=? AND status='pending'").all(session.email);
+    // Wallet balance = sum of all events (credits positive, debits negative)
+    const walletRow = db.prepare("SELECT SUM(amount) as bal FROM seller_wallet_events WHERE seller_email=?").get(session.email);
+    const earnedRow = db.prepare("SELECT SUM(amount) as earned FROM seller_wallet_events WHERE seller_email=? AND type='credit'").get(session.email);
+    const balance = Math.max(0, walletRow.bal || 0);
+    res.json({
+      balance,
+      totalEarned: earnedRow.earned || 0,
+      buyingPower: Math.round(balance * 1.10), // 10% boost
+      events,
+      pendingPayouts: pending
+    });
+  } catch(err) { res.status(500).json({ error: err.message }); }
+});
+
+// Request payout — seller requests bank transfer of their wallet balance
+app.post('/seller/wallet/payout', async (req, res) => {
+  const token = req.headers['x-session-token'] || req.body.token;
+  if (!token) return res.status(401).json({ error: 'Token required' });
+  const session = db.prepare("SELECT * FROM seller_sessions WHERE token=? AND used=1").get(token);
+  if (!session || session.role !== 'seller') return res.status(401).json({ error: 'Invalid session' });
+  if (new Date(session.expires_at) < new Date()) return res.status(401).json({ error: 'Session expired' });
+  try {
+    const walletRow = db.prepare("SELECT SUM(amount) as bal FROM seller_wallet_events WHERE seller_email=?").get(session.email);
+    const balance = Math.max(0, walletRow.bal || 0);
+    if (balance < 100) return res.status(400).json({ error: 'Minimum payout is $1.00' });
+    // Check no pending payout already
+    const existing = db.prepare("SELECT id FROM seller_payout_requests WHERE seller_email=? AND status='pending'").get(session.email);
+    if (existing) return res.status(400).json({ error: 'You already have a pending payout request.' });
+    // Create payout request
+    const reqId = uuidv4();
+    db.prepare("INSERT INTO seller_payout_requests (id,seller_email,amount,status) VALUES (?,?,?,'pending')").run(reqId, session.email, balance);
+    // Log wallet debit event (zeroes out balance)
+    db.prepare("INSERT INTO seller_wallet_events (id,seller_email,amount,type,description) VALUES (?,?,?,?,?)").run(uuidv4(), session.email, -balance, 'payout_request', `Payout request ${reqId}`);
+    // Alert admin
+    await sendEmail(NOTIFY_EMAIL, `[GoodKit] Payout Request: ${session.email}`,
+      `Seller: ${session.email}\nAmount: $${(balance/100).toFixed(2)}\nRequest ID: ${reqId}\n\nProcess via Stripe or bank transfer, then mark complete:\nPOST /admin/wallet/complete-payout?adminKey=KEY&requestId=${reqId}`
+    ).catch(()=>{});
+    // Confirm to seller
+    await sendEmail(session.email, 'GoodKit Payout Requested', emailTemplate('Payout Requested',
+      `<p style="font-size:15px;color:#1A1A14;line-height:1.7;margin:0 0 20px;">Your payout of <strong>$${(balance/100).toFixed(2)}</strong> has been requested. We'll process it within 1–2 business days and send you a confirmation.</p>`
+    )).catch(()=>{});
+    res.json({ success: true, amount: balance, message: `Payout of $${(balance/100).toFixed(2)} requested. Processing within 1–2 business days.` });
+  } catch(err) { res.status(500).json({ error: err.message }); }
+});
+
+// Admin: complete a payout request
+app.post('/admin/wallet/complete-payout', (req, res) => {
+  const key = req.headers['x-admin-key'] || req.query.key || req.query.adminKey || req.body?.adminKey;
+  if (key !== process.env.ADMIN_KEY) return res.status(401).json({ error: 'Unauthorized' });
+  const { requestId } = req.body;
+  if (!requestId) return res.status(400).json({ error: 'requestId required' });
+  try {
+    const pr = db.prepare("SELECT * FROM seller_payout_requests WHERE id=?").get(requestId);
+    if (!pr) return res.status(404).json({ error: 'Request not found' });
+    db.prepare("UPDATE seller_payout_requests SET status='paid', processed_at=datetime('now') WHERE id=?").run(requestId);
+    res.json({ success: true, seller: pr.seller_email, amount: pr.amount });
+  } catch(err) { res.status(500).json({ error: err.message }); }
+});
+
+// Admin: list pending payout requests
+app.get('/admin/wallet/pending-payouts', (req, res) => {
+  const key = req.headers['x-admin-key'] || req.query.key || req.query.adminKey;
+  if (key !== process.env.ADMIN_KEY) return res.status(401).json({ error: 'Unauthorized' });
+  try {
+    const requests = db.prepare("SELECT * FROM seller_payout_requests WHERE status='pending' ORDER BY created_at ASC").all();
+    res.json({ pending: requests.map(r => ({ ...r, amount_dollars: (r.amount/100).toFixed(2) })) });
+  } catch(err) { res.status(500).json({ error: err.message }); }
+});
+
+// ── BRAND PAGES ───────────────────────────────────────────────────────────────
+
+// Get brand page + listings
+app.get('/brand/:slug', (req, res) => {
+  try {
+    const slug = req.params.slug.toLowerCase();
+    // Find brand — either exact slug match or partial name match
+    const brandPage = db.prepare("SELECT * FROM brand_pages WHERE slug=?").get(slug);
+    // Auto-generate brand name from slug if no brand_page record
+    const brandName = brandPage?.name || slug.split('-').map(w => w.charAt(0).toUpperCase() + w.slice(1)).join(' ');
+    // Fetch listings matching brand (case-insensitive)
+    const listings = db.prepare(`
+      SELECT * FROM listings
+      WHERE (LOWER(brand)=LOWER(?) OR LOWER(title) LIKE LOWER(?))
+        AND status='approved'
+      ORDER BY created_at DESC
+    `).all(brandName, `%${slug.replace(/-/g,' ')}%`);
+    res.json({
+      brand: brandPage || { slug, name: brandName, tagline: '', logo_url: '', accent_color: '#FF5C1A' },
+      listings: listings.map(l => ({ ...l, photos: JSON.parse(l.photos || '[]'), price: l.price / 100 })),
+      count: listings.length
+    });
+  } catch(err) { res.status(500).json({ error: err.message }); }
+});
+
+// List all brands that have active listings
+app.get('/brands', (req, res) => {
+  try {
+    const brands = db.prepare(`
+      SELECT brand, COUNT(*) as count FROM listings
+      WHERE brand IS NOT NULL AND brand != '' AND status='approved'
+      GROUP BY brand ORDER BY count DESC
+    `).all();
+    res.json({ brands });
+  } catch(err) { res.status(500).json({ error: err.message }); }
+});
+
+// Admin: upsert brand page
+app.post('/admin/brand', (req, res) => {
+  const key = req.headers['x-admin-key'] || req.query.key || req.query.adminKey || req.body?.adminKey;
+  if (key !== process.env.ADMIN_KEY) return res.status(401).json({ error: 'Unauthorized' });
+  try {
+    const { slug, name, tagline, logo_url, accent_color } = req.body;
+    if (!slug || !name) return res.status(400).json({ error: 'slug and name required' });
+    const existing = db.prepare("SELECT id FROM brand_pages WHERE slug=?").get(slug);
+    if (existing) {
+      db.prepare("UPDATE brand_pages SET name=?,tagline=?,logo_url=?,accent_color=? WHERE slug=?").run(name, tagline||'', logo_url||'', accent_color||'#FF5C1A', slug);
+    } else {
+      db.prepare("INSERT INTO brand_pages (id,slug,name,tagline,logo_url,accent_color) VALUES (?,?,?,?,?,?)").run(uuidv4(), slug, name, tagline||'', logo_url||'', accent_color||'#FF5C1A');
+    }
+    res.json({ success: true });
+  } catch(err) { res.status(500).json({ error: err.message }); }
+});
+
+// ── REP PAGES ─────────────────────────────────────────────────────────────────
+
+// Get rep page + listings
+app.get('/rep/:slug', (req, res) => {
+  try {
+    const slug = req.params.slug.toLowerCase();
+    const rep = db.prepare("SELECT * FROM rep_pages WHERE slug=?").get(slug);
+    if (!rep) return res.status(404).json({ error: 'Rep page not found' });
+    const listings = db.prepare(`
+      SELECT * FROM listings
+      WHERE seller_email=? AND status='approved'
+      ORDER BY created_at DESC
+    `).all(rep.seller_email);
+    res.json({
+      rep: { ...rep, brands: JSON.parse(rep.brands || '[]') },
+      listings: listings.map(l => ({ ...l, photos: JSON.parse(l.photos || '[]'), price: l.price / 100 })),
+      count: listings.length
+    });
+  } catch(err) { res.status(500).json({ error: err.message }); }
+});
+
+// Admin: create or update rep page
+app.post('/admin/rep', (req, res) => {
+  const key = req.headers['x-admin-key'] || req.query.key || req.query.adminKey || req.body?.adminKey;
+  if (key !== process.env.ADMIN_KEY) return res.status(401).json({ error: 'Unauthorized' });
+  try {
+    const { slug, seller_email, name, bio, logo_url, brands } = req.body;
+    if (!slug || !seller_email || !name) return res.status(400).json({ error: 'slug, seller_email, and name required' });
+    const existing = db.prepare("SELECT id FROM rep_pages WHERE slug=?").get(slug);
+    if (existing) {
+      db.prepare("UPDATE rep_pages SET seller_email=?,name=?,bio=?,logo_url=?,brands=? WHERE slug=?").run(seller_email, name, bio||'', logo_url||'', JSON.stringify(brands||[]), slug);
+    } else {
+      db.prepare("INSERT INTO rep_pages (id,slug,seller_email,name,bio,logo_url,brands) VALUES (?,?,?,?,?,?,?)").run(uuidv4(), slug, seller_email, name, bio||'', logo_url||'', JSON.stringify(brands||[]));
+    }
+    res.json({ success: true, url: `${BASE_URL}/rep/${slug}` });
+  } catch(err) { res.status(500).json({ error: err.message }); }
+});
+
+// Seller: update their own brand tag on a listing
+app.patch('/listings/:id/brand', (req, res) => {
+  const token = req.headers['x-session-token'] || req.body.token;
+  if (!token) return res.status(401).json({ error: 'Token required' });
+  const session = db.prepare("SELECT * FROM seller_sessions WHERE token=? AND used=1").get(token);
+  if (!session) return res.status(401).json({ error: 'Invalid session' });
+  try {
+    const listing = db.prepare("SELECT * FROM listings WHERE id=?").get(req.params.id);
+    if (!listing) return res.status(404).json({ error: 'Listing not found' });
+    if (listing.seller_email !== session.email) return res.status(403).json({ error: 'Unauthorized' });
+    const { brand } = req.body;
+    db.prepare("UPDATE listings SET brand=? WHERE id=?").run(brand || null, req.params.id);
+    res.json({ success: true, brand: brand || null });
+  } catch(err) { res.status(500).json({ error: err.message }); }
+});
+
 // One-click listing actions from lifecycle emails
 app.get('/listing/action', async (req, res) => {
   try {
@@ -1149,7 +1428,9 @@ app.get('/seller/portal', (req, res) => {
         pendingPayout:  sales.filter(s => s.status === 'delivered').reduce((sum, s) => sum + s.seller_payout, 0),
         activeListings: listings.filter(l => l.status === 'approved').length,
         soldListings:   listings.filter(l => l.status === 'sold').length,
-        totalViews:     listings.reduce((sum, l) => sum + (l.view_count || 0), 0)
+        totalViews:     listings.reduce((sum, l) => sum + (l.view_count || 0), 0),
+        walletBalance:  (() => { const r = db.prepare("SELECT SUM(amount) as bal FROM seller_wallet_events WHERE seller_email=?").get(email); return Math.max(0, r?.bal || 0); })(),
+        walletBuyingPower: (() => { const r = db.prepare("SELECT SUM(amount) as bal FROM seller_wallet_events WHERE seller_email=?").get(email); return Math.round(Math.max(0, r?.bal || 0) * 1.10); })()
       },
       listings, sales, offers, threads
     });
@@ -1217,8 +1498,9 @@ Write the description as if you are describing the item to a buyer. Include: wha
       }
     }
 
-    db.prepare(`INSERT INTO listings (id,seller_name,seller_email,stripe_account_id,title,category,size,description,condition,price,shipping_estimate,weight_oz,photos,status,keywords,ccx_code,delivery_type,allows_pickup,community_id) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,'approved',?,?,?,?,?)`)
-      .run(id, seller_name.trim(), seller_email.trim(), stripeId, title.trim(), category || 'Other', size || '', finalDescription, condition || 'Good', priceInCents, shippingCents, weightOz, JSON.stringify(photos), keywords || '', validCcxCode, validDeliveryType, allowsPickup, validCommunityId);
+    const detectedBrand = detectBrand(title, keywords);
+    db.prepare(`INSERT INTO listings (id,seller_name,seller_email,stripe_account_id,title,category,size,description,condition,price,shipping_estimate,weight_oz,photos,status,keywords,ccx_code,delivery_type,allows_pickup,community_id,brand) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,'approved',?,?,?,?,?,?)`)
+      .run(id, seller_name.trim(), seller_email.trim(), stripeId, title.trim(), category || 'Other', size || '', finalDescription, condition || 'Good', priceInCents, shippingCents, weightOz, JSON.stringify(photos), keywords || '', validCcxCode, validDeliveryType, allowsPickup, validCommunityId, detectedBrand);
     const newListing = db.prepare("SELECT * FROM listings WHERE id = ?").get(id);
     await fireListingAlerts(newListing);
     await sendEmail(NOTIFY_EMAIL, `[GoodKit] New listing: ${title}`, `Seller: ${seller_name} · ${seller_email}\nItem: ${title}\nPrice: $${priceInCents/100}\nWeight: ${weightOz}oz${validCcxCode ? `\nCCX: ${validCcxCode}` : ''}`);
@@ -1653,10 +1935,29 @@ app.post('/webhook', async (req, res) => {
     db.prepare("UPDATE sales SET status='pending_shipment' WHERE payment_intent_id=?").run(pi.id);
 
     // CCX fund credit — if listing had a ccx_code, credit the team fund
-    const saleForCcx = db.prepare("SELECT ccx_code, ccx_fund FROM sales WHERE payment_intent_id=?").get(pi.id);
+    const saleForCcx = db.prepare("SELECT ccx_code, ccx_fund, seller_payout FROM sales WHERE payment_intent_id=?").get(pi.id);
     if (saleForCcx?.ccx_code && saleForCcx.ccx_fund > 0) {
       db.prepare("UPDATE ccx_teams SET fund_balance=fund_balance+?, total_earned=total_earned+? WHERE code=?")
         .run(saleForCcx.ccx_fund, saleForCcx.ccx_fund, saleForCcx.ccx_code);
+    }
+
+    // Seller wallet credit — credit seller's wallet with their payout
+    if (saleForCcx?.seller_payout > 0) {
+      const saleRow = db.prepare("SELECT * FROM sales WHERE payment_intent_id=?").get(pi.id);
+      if (saleRow) {
+        const sellerEmail = db.prepare("SELECT seller_email FROM listings WHERE id=?").get(listingId)?.seller_email;
+        if (sellerEmail) {
+          // Credit wallet on the seller's most recent used session row
+          const latestSession = db.prepare("SELECT id FROM seller_sessions WHERE email=? AND used=1 ORDER BY created_at DESC LIMIT 1").get(sellerEmail);
+          if (latestSession) {
+            db.prepare("UPDATE seller_sessions SET wallet_balance=wallet_balance+?, wallet_total_earned=wallet_total_earned+? WHERE id=?")
+              .run(saleRow.seller_payout, saleRow.seller_payout, latestSession.id);
+          }
+          // Log wallet event
+          db.prepare("INSERT INTO seller_wallet_events (id,seller_email,sale_id,amount,type,description) VALUES (?,?,?,?,?,?)")
+            .run(uuidv4(), sellerEmail, saleRow.id, saleRow.seller_payout, 'credit', `Sale: ${listingId}`);
+        }
+      }
     }
 
     const listing = db.prepare("SELECT * FROM listings WHERE id=?").get(listingId);
