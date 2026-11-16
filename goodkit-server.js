@@ -1551,7 +1551,7 @@ app.post('/listings', upload.array('photos', 8), async (req, res) => {
     if (!stripe_account_id) return res.status(400).json({ error: 'Seller must complete Stripe onboarding first' });
     // Require shipping address before listing — needed for label generation on sale
     const addrCheck = db.prepare("SELECT ship_street1 FROM seller_sessions WHERE email=? AND used=1 AND ship_street1 IS NOT NULL AND ship_street1 != '' ORDER BY created_at DESC LIMIT 1").get(seller_email);
-    if (!addrCheck) return res.status(400).json({ error: 'Please add your shipping address in the portal before listing. It's required to generate prepaid labels when items sell.' });
+    if (!addrCheck) return res.status(400).json({ error: 'Please add your shipping address in the portal before listing. Required to generate prepaid labels when items sell.' });
     const priceInCents  = Math.round(parseFloat(price) * 100);
     const shippingCents = Math.round(parseFloat(shipping_estimate || 0) * 100);
     const weightOz      = parseInt(weight_oz || 0) || 0;
