@@ -242,6 +242,12 @@ db.exec(`
   `ALTER TABLE sales ADD COLUMN trail_donation INTEGER DEFAULT 0`,
 ].forEach(sql => { try { db.exec(sql); } catch(e) {} });
 
+// Payout + wallet credit migrations
+[
+  `ALTER TABLE seller_payout_requests ADD COLUMN stripe_transfer_id TEXT DEFAULT NULL`,
+  `ALTER TABLE seller_wallet_events ADD COLUMN type TEXT DEFAULT 'credit'`,
+].forEach(sql => { try { db.exec(sql); } catch(e) {} });
+
 // Shop consignment migrations
 [
   `ALTER TABLE seller_sessions ADD COLUMN account_type TEXT DEFAULT 'individual'`,
@@ -1075,7 +1081,26 @@ app.get('/buyer/verify', (req, res) => {
     db.prepare("INSERT INTO seller_sessions (id, email, token, role, expires_at, used) VALUES (?, ?, ?, 'buyer', ?, 1)").run(uuidv4(), session.email, sessionToken, sessionExpiry);
     // Pull most recent purchase info to pre-fill
     const lastSale = db.prepare("SELECT * FROM sales WHERE buyer_email=? ORDER BY created_at DESC LIMIT 1").get(session.email);
-    res.json({ success: true, sessionToken, email: session.email, name: lastSale?.buyer_name||'', street1: lastSale?.buyer_street1||'', city: lastSale?.buyer_city||'', state: lastSale?.buyer_state||'', zip: lastSale?.buyer_zip||'' });
+    // Buyer wallet balance (sellers who also buy use their seller wallet with 1.10x buying power)
+    const walletRow = db.prepare("SELECT SUM(amount) as bal FROM seller_wallet_events WHERE seller_email=?").get(session.email);
+    const walletBalance = Math.max(0, walletRow?.bal || 0);
+    const walletBuyingPower = Math.round(walletBalance * 1.10);
+    res.json({ success: true, sessionToken, email: session.email, name: lastSale?.buyer_name||'', street1: lastSale?.buyer_street1||'', city: lastSale?.buyer_city||'', state: lastSale?.buyer_state||'', zip: lastSale?.buyer_zip||'', walletBalance, walletBuyingPower });
+  } catch(err) { res.status(500).json({ error: err.message }); }
+});
+
+// Get buyer wallet balance — for logged-in buyers at checkout
+app.get('/buyer/wallet', (req, res) => {
+  try {
+    const token = req.headers['x-session-token'] || req.query.token;
+    if (!token) return res.status(401).json({ error: 'Token required' });
+    const session = db.prepare("SELECT * FROM seller_sessions WHERE token=? AND role='buyer' AND used=1").get(token);
+    if (!session) return res.status(401).json({ error: 'Invalid session' });
+    if (new Date(session.expires_at) < new Date()) return res.status(401).json({ error: 'Session expired' });
+    const walletRow = db.prepare("SELECT SUM(amount) as bal FROM seller_wallet_events WHERE seller_email=?").get(session.email);
+    const walletBalance = Math.max(0, walletRow?.bal || 0);
+    const walletBuyingPower = Math.round(walletBalance * 1.10);
+    res.json({ success: true, email: session.email, walletBalance, walletBuyingPower });
   } catch(err) { res.status(500).json({ error: err.message }); }
 });
 async function handleMagicLink(req, res) {
@@ -1171,8 +1196,8 @@ app.post('/seller/wallet/payout', async (req, res) => {
   } catch(err) { res.status(500).json({ error: err.message }); }
 });
 
-// Admin: complete a payout request
-app.post('/admin/wallet/complete-payout', (req, res) => {
+// Admin: complete a payout request — fires actual Stripe transfer to seller's connected account
+app.post('/admin/wallet/complete-payout', async (req, res) => {
   const key = req.headers['x-admin-key'] || req.query.key || req.query.adminKey || req.body?.adminKey;
   if (key !== process.env.ADMIN_KEY) return res.status(401).json({ error: 'Unauthorized' });
   const { requestId } = req.body;
@@ -1180,8 +1205,31 @@ app.post('/admin/wallet/complete-payout', (req, res) => {
   try {
     const pr = db.prepare("SELECT * FROM seller_payout_requests WHERE id=?").get(requestId);
     if (!pr) return res.status(404).json({ error: 'Request not found' });
-    db.prepare("UPDATE seller_payout_requests SET status='paid', processed_at=datetime('now') WHERE id=?").run(requestId);
-    res.json({ success: true, seller: pr.seller_email, amount: pr.amount });
+    if (pr.status === 'paid') return res.status(400).json({ error: 'Already paid' });
+
+    // Look up seller's Stripe connected account from their most recent listing
+    const sellerListing = db.prepare("SELECT stripe_account_id FROM listings WHERE seller_email=? AND stripe_account_id IS NOT NULL AND stripe_account_id != '' ORDER BY created_at DESC LIMIT 1").get(pr.seller_email);
+    let stripeTransferId = null;
+
+    if (sellerListing?.stripe_account_id && sellerListing.stripe_account_id.startsWith('acct_')) {
+      // Fire Stripe transfer to seller's connected account
+      const transfer = await stripe.transfers.create({
+        amount:      pr.amount,
+        currency:    'usd',
+        destination: sellerListing.stripe_account_id,
+        description: `GoodKit wallet payout — request ${requestId}`
+      });
+      stripeTransferId = transfer.id;
+    }
+    // Mark paid regardless (admin may also do manual bank/Venmo for sellers without Stripe)
+    db.prepare("UPDATE seller_payout_requests SET status='paid', processed_at=datetime('now'), stripe_transfer_id=? WHERE id=?").run(stripeTransferId || null, requestId);
+
+    // Email seller confirmation
+    await sendEmail(pr.seller_email, 'GoodKit Payout Sent', emailTemplate('Your Payout Is On Its Way',
+      `<p style="font-size:15px;color:#1A1A14;line-height:1.7;margin:0 0 20px;">Your payout of <strong>$${(pr.amount/100).toFixed(2)}</strong> has been sent${stripeTransferId ? ' via Stripe' : ''}. It typically arrives within 1–3 business days.</p>`
+    )).catch(()=>{});
+
+    res.json({ success: true, seller: pr.seller_email, amount: pr.amount, stripeTransferId });
   } catch(err) { res.status(500).json({ error: err.message }); }
 });
 
@@ -1662,7 +1710,7 @@ app.get('/alerts/unsubscribe', (req, res) => {
 // DO NOT add amount to transfer_data — scopes the PI to connected account and breaks confirmCardPayment
 app.post('/checkout', async (req, res) => {
   try {
-    const { listingId, buyerEmail, deliveryType, buyerName, buyerStreet1, buyerCity, buyerState, buyerZip } = req.body;
+    const { listingId, buyerEmail, deliveryType, buyerName, buyerStreet1, buyerCity, buyerState, buyerZip, useWalletCredits, buyerSessionToken } = req.body;
     const listing = db.prepare("SELECT * FROM listings WHERE id=? AND status='approved'").get(listingId);
     if (!listing) return res.status(404).json({ error: 'Listing not found or no longer available' });
 
@@ -1675,17 +1723,35 @@ app.post('/checkout', async (req, res) => {
     const totalCharge   = listing.price + shippingCents;
     const labelInfo     = getLabelTier(listing.weight_oz);
 
+    // Wallet credits: buyer can apply their GoodKit wallet with 1.10x buying power
+    let walletCreditApplied = 0;
+    let buyerWalletEmail = null;
+    if (useWalletCredits && buyerSessionToken) {
+      const buyerSess = db.prepare("SELECT * FROM seller_sessions WHERE token=? AND role='buyer' AND used=1").get(buyerSessionToken);
+      if (buyerSess && new Date(buyerSess.expires_at) > new Date()) {
+        const walletRow = db.prepare("SELECT SUM(amount) as bal FROM seller_wallet_events WHERE seller_email=?").get(buyerSess.email);
+        const walletBalance = Math.max(0, walletRow?.bal || 0);
+        const walletBuyingPower = Math.round(walletBalance * 1.10); // 1.10x buying power bonus
+        // Apply up to the full charge amount
+        walletCreditApplied = Math.min(walletBuyingPower, totalCharge);
+        buyerWalletEmail = buyerSess.email;
+      }
+    }
+    const chargeAfterWallet = Math.max(50, totalCharge - walletCreditApplied); // Stripe minimum $0.50
+
     const piParams = {
-      amount:               totalCharge,
+      amount:               chargeAfterWallet,
       currency:             'usd',
       receipt_email:        buyerEmail,
       payment_method_types: ['card'],
       metadata: {
-        listingId:    listing.id,
-        listingTitle: listing.title,
-        sellerEmail:  listing.seller_email,
-        deliveryType: resolvedDeliveryType,
-        labelTier:    labelInfo.tier
+        listingId:          listing.id,
+        listingTitle:       listing.title,
+        sellerEmail:        listing.seller_email,
+        deliveryType:       resolvedDeliveryType,
+        labelTier:          labelInfo.tier,
+        walletCreditApplied: walletCreditApplied,
+        buyerWalletEmail:    buyerWalletEmail || ''
       }
     };
 
@@ -1726,6 +1792,13 @@ app.post('/checkout', async (req, res) => {
         donationRecipient
       );
 
+    // If wallet credits applied, deduct from buyer's wallet immediately (pending confirmation via webhook)
+    if (walletCreditApplied > 0 && buyerWalletEmail) {
+      const walletDeductAmount = Math.round(walletCreditApplied / 1.10); // buying power → actual wallet balance
+      db.prepare("INSERT INTO seller_wallet_events (id,seller_email,sale_id,amount,type,description) VALUES (?,?,?,?,?,?)")
+        .run(uuidv4(), buyerWalletEmail, saleId, -walletDeductAmount, 'wallet_pending_purchase', `Wallet credit pending: PI ${paymentIntent.id}`);
+    }
+
     res.json({
       success:        true,
       clientSecret:   paymentIntent.client_secret,
@@ -1741,8 +1814,10 @@ app.post('/checkout', async (req, res) => {
         sellerPct:   split.sellerPct,
         platformPct: split.platformPct
       },
-      label:        labelInfo,
-      deliveryType: resolvedDeliveryType
+      label:              labelInfo,
+      deliveryType:       resolvedDeliveryType,
+      walletCreditApplied,
+      chargeAfterWallet
     });
   } catch(err) { console.error('Checkout error:', err); res.status(500).json({ error: err.message }); }
 });
@@ -2037,6 +2112,17 @@ app.post('/webhook', async (req, res) => {
       }
     }
 
+    // Buyer wallet credit confirmation — convert pending wallet deduction to confirmed
+    const buyerWalletEmail = pi.metadata.buyerWalletEmail;
+    if (buyerWalletEmail) {
+      const saleRow2 = db.prepare("SELECT id FROM sales WHERE payment_intent_id=?").get(pi.id);
+      if (saleRow2) {
+        // Update the pending wallet event to confirmed type
+        db.prepare("UPDATE seller_wallet_events SET type='wallet_purchase', description=? WHERE sale_id=? AND seller_email=? AND type='wallet_pending_purchase'")
+          .run(`Wallet credit used for purchase: ${listingId}`, saleRow2.id, buyerWalletEmail);
+      }
+    }
+
     const listing = db.prepare("SELECT * FROM listings WHERE id=?").get(listingId);
     const sale    = db.prepare("SELECT * FROM sales WHERE payment_intent_id=?").get(pi.id);
 
@@ -2202,6 +2288,27 @@ app.post('/webhook', async (req, res) => {
     }
     console.log('Sold:', listingId);
   }
+
+  // Reverse pending wallet deduction if payment failed
+  if (event.type === 'payment_intent.payment_failed') {
+    const pi = event.data.object;
+    const buyerWalletEmail = pi.metadata?.buyerWalletEmail;
+    if (buyerWalletEmail) {
+      // Find and reverse the pending wallet deduction for this PI
+      const saleRow = db.prepare("SELECT id FROM sales WHERE payment_intent_id=?").get(pi.id);
+      if (saleRow) {
+        // Get the pending deduction amount
+        const pendingEvent = db.prepare("SELECT amount FROM seller_wallet_events WHERE sale_id=? AND seller_email=? AND type='wallet_pending_purchase'").get(saleRow.id, buyerWalletEmail);
+        if (pendingEvent) {
+          // Credit back the amount and remove pending marker
+          db.prepare("DELETE FROM seller_wallet_events WHERE sale_id=? AND seller_email=? AND type='wallet_pending_purchase'")
+            .run(saleRow.id, buyerWalletEmail);
+          console.log(`[wallet] Reversed pending deduction for failed PI ${pi.id}: ${buyerWalletEmail} +${Math.abs(pendingEvent.amount)}`);
+        }
+      }
+    }
+  }
+
   res.json({ received: true });
 });
 
