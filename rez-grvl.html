@@ -1,0 +1,458 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Ride for Rez GRVL — GoodKit</title>
+<meta name="description" content="100% of GoodKit's first-month profits go to Rez GRVL — the Indigenous-led gravel ride taking on a corporate trademark to stay alive.">
+<link rel="canonical" href="https://good-kit.com/rez-grvl">
+<meta property="og:type" content="website">
+<meta property="og:url" content="https://good-kit.com/rez-grvl">
+<meta property="og:title" content="Ride for Rez GRVL — GoodKit">
+<meta property="og:description" content="100% of GoodKit's first-month profits go to Rez GRVL — an Indigenous-led gravel ride on the Gila River rez taking on a corporate trademark.">
+<meta property="og:image" content="https://good-kit.com/og-image.png">
+<meta name="twitter:card" content="summary_large_image">
+<meta name="twitter:title" content="Ride for Rez GRVL — GoodKit">
+<meta name="twitter:description" content="100% of GoodKit's first-month profits go to Rez GRVL.">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Space+Mono:ital,wght@0,400;0,700;1,400&family=Inter:wght@400;500;600;700&display=swap">
+
+<style>
+/* ── Tokens — desert night meets GoodKit orange ── */
+:root {
+  --bg: #f5f0e8;
+  --bg2: #ede6d8;
+  --ink: #1a1510;
+  --ink-soft: rgba(26,21,16,0.55);
+  --orange: #E8450A;
+  --orange-light: rgba(232,69,10,0.1);
+  --sand: #C4A97D;
+  --green: #2a6b3c;
+  --border: rgba(26,21,16,0.12);
+  --card: #fff;
+  color-scheme: light;
+}
+@media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) {
+  --bg: #100e08;
+  --bg2: #1a1510;
+  --ink: #f0ebe0;
+  --ink-soft: rgba(240,235,224,0.55);
+  --orange: #FF5C1A;
+  --orange-light: rgba(255,92,26,0.12);
+  --sand: #8a7055;
+  --green: #3a9b55;
+  --border: rgba(240,235,224,0.1);
+  --card: rgba(255,255,255,0.05);
+  color-scheme: dark;
+}}
+:root[data-theme="dark"] {
+  --bg: #100e08; --bg2: #1a1510; --ink: #f0ebe0;
+  --ink-soft: rgba(240,235,224,0.55); --orange: #FF5C1A;
+  --orange-light: rgba(255,92,26,0.12); --sand: #8a7055;
+  --green: #3a9b55; --border: rgba(240,235,224,0.1);
+  --card: rgba(255,255,255,0.05); color-scheme: dark;
+}
+
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+body {
+  background: var(--bg);
+  color: var(--ink);
+  font-family: 'Inter', system-ui, sans-serif;
+  -webkit-font-smoothing: antialiased;
+  overflow-x: hidden;
+}
+
+/* ── NAV ── */
+nav {
+  position: sticky;
+  top: env(safe-area-inset-top, 0px);
+  z-index: 100;
+  background: var(--bg);
+  border-bottom: 1px solid var(--border);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding-block: 14px;
+  padding-left: max(24px, env(safe-area-inset-left, 0px));
+  padding-right: max(24px, env(safe-area-inset-right, 0px));
+}
+.nav-logo {
+  font-family: 'Space Mono', monospace;
+  font-weight: 700;
+  font-size: 15px;
+  text-decoration: none;
+  color: var(--ink);
+  letter-spacing: -0.5px;
+}
+.nav-logo span { color: var(--orange); }
+.nav-cta {
+  background: var(--orange);
+  color: #fff;
+  font-family: 'Space Mono', monospace;
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  text-decoration: none;
+  padding: 8px 16px;
+  border-radius: 4px;
+}
+
+/* ── HERO ── */
+.hero {
+  background: var(--orange);
+  padding-block: 72px 56px;
+  padding-left: max(24px, env(safe-area-inset-left, 0px));
+  padding-right: max(24px, env(safe-area-inset-right, 0px));
+  position: relative;
+  overflow: hidden;
+}
+.hero::after {
+  content: '';
+  position: absolute;
+  bottom: -1px; left: 0; right: 0;
+  height: 32px;
+  background: var(--bg);
+  clip-path: ellipse(55% 100% at 50% 100%);
+}
+.hero-eyebrow {
+  font-family: 'Space Mono', monospace;
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: rgba(255,255,255,0.75);
+  margin-bottom: 16px;
+}
+.hero h1 {
+  font-family: 'Space Mono', monospace;
+  font-size: clamp(32px, 7vw, 60px);
+  font-weight: 700;
+  color: #fff;
+  line-height: 1.05;
+  letter-spacing: -1.5px;
+  text-wrap: balance;
+  max-width: 640px;
+  margin-bottom: 20px;
+}
+.hero h1 em {
+  font-style: normal;
+  color: rgba(255,255,255,0.65);
+}
+.hero-sub {
+  font-size: 17px;
+  color: rgba(255,255,255,0.88);
+  line-height: 1.6;
+  max-width: 520px;
+  margin-bottom: 36px;
+}
+.hero-actions {
+  display: flex;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+.btn-white {
+  background: #fff;
+  color: var(--orange);
+  font-family: 'Space Mono', monospace;
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  text-decoration: none;
+  padding: 13px 24px;
+  border-radius: 4px;
+  display: inline-block;
+}
+.btn-outline {
+  border: 2px solid rgba(255,255,255,0.5);
+  color: #fff;
+  font-family: 'Space Mono', monospace;
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  text-decoration: none;
+  padding: 11px 22px;
+  border-radius: 4px;
+  display: inline-block;
+}
+
+/* ── SECTION ── */
+.section {
+  padding-block: 56px;
+  padding-left: max(24px, env(safe-area-inset-left, 0px));
+  padding-right: max(24px, env(safe-area-inset-right, 0px));
+  max-width: 760px;
+  margin: 0 auto;
+}
+.section-label {
+  font-family: 'Space Mono', monospace;
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  color: var(--orange);
+  margin-bottom: 16px;
+}
+.section h2 {
+  font-family: 'Space Mono', monospace;
+  font-size: clamp(22px, 4vw, 32px);
+  font-weight: 700;
+  letter-spacing: -0.8px;
+  line-height: 1.2;
+  text-wrap: balance;
+  margin-bottom: 20px;
+}
+.section p {
+  font-size: 16px;
+  line-height: 1.75;
+  color: var(--ink-soft);
+  max-width: 600px;
+}
+.section p + p { margin-top: 14px; }
+
+/* ── WHAT HAPPENED ── */
+.trademark-box {
+  background: var(--bg2);
+  border-left: 3px solid var(--orange);
+  border-radius: 0 8px 8px 0;
+  padding: 20px 24px;
+  margin-top: 28px;
+  font-size: 14px;
+  line-height: 1.65;
+  color: var(--ink);
+}
+.trademark-box strong { color: var(--orange); font-family: 'Space Mono', monospace; font-size: 12px; letter-spacing: 0.08em; text-transform: uppercase; display: block; margin-bottom: 8px; }
+
+/* ── COMMITMENT STRIP ── */
+.commitment {
+  background: var(--bg2);
+  border-top: 1px solid var(--border);
+  border-bottom: 1px solid var(--border);
+  padding-block: 56px;
+  padding-left: max(24px, env(safe-area-inset-left, 0px));
+  padding-right: max(24px, env(safe-area-inset-right, 0px));
+  text-align: center;
+}
+.commitment .big-num {
+  font-family: 'Space Mono', monospace;
+  font-size: clamp(48px, 10vw, 80px);
+  font-weight: 700;
+  color: var(--orange);
+  letter-spacing: -3px;
+  line-height: 1;
+  margin-bottom: 10px;
+}
+.commitment h2 {
+  font-family: 'Space Mono', monospace;
+  font-size: clamp(18px, 3.5vw, 26px);
+  font-weight: 700;
+  letter-spacing: -0.5px;
+  margin-bottom: 16px;
+  text-wrap: balance;
+}
+.commitment p {
+  font-size: 15px;
+  color: var(--ink-soft);
+  line-height: 1.65;
+  max-width: 520px;
+  margin: 0 auto 32px;
+}
+.commitment-cta {
+  background: var(--orange);
+  color: #fff;
+  font-family: 'Space Mono', monospace;
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  text-decoration: none;
+  padding: 14px 28px;
+  border-radius: 4px;
+  display: inline-block;
+}
+
+/* ── EVENT DETAILS ── */
+.event-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+  gap: 16px;
+  margin-top: 32px;
+}
+.event-card {
+  background: var(--card);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 20px;
+}
+.event-card .label {
+  font-family: 'Space Mono', monospace;
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--sand);
+  margin-bottom: 6px;
+}
+.event-card .val {
+  font-size: 15px;
+  font-weight: 600;
+  line-height: 1.3;
+}
+
+/* ── HOW IT WORKS ── */
+.steps {
+  display: flex;
+  flex-direction: column;
+  gap: 24px;
+  margin-top: 32px;
+}
+.step {
+  display: flex;
+  gap: 20px;
+  align-items: flex-start;
+}
+.step-num {
+  font-family: 'Space Mono', monospace;
+  font-size: 11px;
+  font-weight: 700;
+  color: var(--orange);
+  background: var(--orange-light);
+  border-radius: 50%;
+  width: 32px; height: 32px;
+  display: flex; align-items: center; justify-content: center;
+  flex-shrink: 0;
+  margin-top: 2px;
+}
+.step-body strong {
+  display: block;
+  font-size: 15px;
+  font-weight: 600;
+  margin-bottom: 4px;
+}
+.step-body span {
+  font-size: 14px;
+  color: var(--ink-soft);
+  line-height: 1.6;
+}
+
+/* ── FOOTER ── */
+footer {
+  border-top: 1px solid var(--border);
+  padding-block: 32px;
+  padding-left: max(24px, env(safe-area-inset-left, 0px));
+  padding-right: max(24px, env(safe-area-inset-right, 0px));
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 12px;
+  font-size: 12px;
+  color: var(--ink-soft);
+  font-family: 'Space Mono', monospace;
+}
+footer a { color: var(--orange); text-decoration: none; }
+</style>
+</head>
+<body>
+
+<!-- NAV -->
+<nav>
+  <a class="nav-logo" href="https://good-kit.com">goodkit<span>.</span></a>
+  <a class="nav-cta" href="https://good-kit.com/marketplace">Shop Gear</a>
+</nav>
+
+<!-- HERO -->
+<div class="hero">
+  <div class="hero-eyebrow">GoodKit × Rez GRVL</div>
+  <h1>Every sale this month rides <em>for the rez.</em></h1>
+  <p class="hero-sub">100% of GoodKit's first-month profits go to Rez GRVL — the Indigenous-led gravel ride taking on a corporate trademark to stay alive.</p>
+  <div class="hero-actions">
+    <a class="btn-white" href="https://good-kit.com/marketplace">Shop & Support →</a>
+    <a class="btn-outline" href="https://good-kit.com/sell-your-gear.html">List Your Gear</a>
+  </div>
+</div>
+
+<!-- WHAT HAPPENED -->
+<div class="section">
+  <div class="section-label">What happened</div>
+  <h2>They built something real. Then got a cease-and-desist.</h2>
+  <p>Rez GRVL is an Indigenous-led adventure ride on the Gila River Indian Reservation in Sacaton, Arizona — January 9–10, 2027. It raises money for nonprofits and brings riders to land that cycling rarely touches.</p>
+  <p>SBT GRVL® holds a federal trademark on "GRVL" for cycling events. They contacted the organizer — publicly, on Instagram — asking her to rename the event and rebrand. Fully within their legal rights. Also a gut punch to a grassroots community ride.</p>
+  <div class="trademark-box">
+    <strong>The letter, in short</strong>
+    "We own the federally registered GRVL® trademark for cycling events… we're asking that you change the event name to REZ Gravel, or another variation that doesn't use GRVL®, and update the associated branding." — Ryan Steers, VP GRVL Events, SBT GRVL
+  </div>
+</div>
+
+<!-- COMMITMENT -->
+<div class="commitment">
+  <div class="big-num">100%</div>
+  <h2>of GoodKit's first-month profits go to Rez GRVL</h2>
+  <p>GoodKit launched because gear resale should be fair — 85% to sellers, transparent fees, real community. Rez GRVL is exactly the kind of event we exist to support. Every jersey, wheel, and frameset sold this month goes toward them.</p>
+  <a class="commitment-cta" href="https://good-kit.com/marketplace">Start Shopping →</a>
+</div>
+
+<!-- EVENT DETAILS -->
+<div class="section">
+  <div class="section-label">The ride</div>
+  <h2>Rez GRVL — January 9–10, 2027</h2>
+  <p>An Indigenous-led adventure ride on the Gila River Indian Reservation. Routes across desert terrain most cyclists will never see. Register at bikesignup.com/rezgravel.</p>
+  <div class="event-grid">
+    <div class="event-card">
+      <div class="label">Date</div>
+      <div class="val">Jan 9–10, 2027</div>
+    </div>
+    <div class="event-card">
+      <div class="label">Location</div>
+      <div class="val">Sacaton, Arizona</div>
+    </div>
+    <div class="event-card">
+      <div class="label">Terrain</div>
+      <div class="val">Gravel, Desert</div>
+    </div>
+    <div class="event-card">
+      <div class="label">Register</div>
+      <div class="val"><a href="https://bikesignup.com/rezgravel" style="color:var(--orange);text-decoration:none;">bikesignup.com/<br>rezgravel</a></div>
+    </div>
+  </div>
+</div>
+
+<!-- HOW IT WORKS -->
+<div class="section" style="border-top:1px solid var(--border); padding-top:56px;">
+  <div class="section-label">How it works</div>
+  <h2>Buy gear. Support the ride.</h2>
+  <div class="steps">
+    <div class="step">
+      <div class="step-num">1</div>
+      <div class="step-body">
+        <strong>Shop or list gear on GoodKit</strong>
+        <span>Used cycling gear — bikes, components, apparel, shoes. Sellers keep 85%. Free to list.</span>
+      </div>
+    </div>
+    <div class="step">
+      <div class="step-num">2</div>
+      <div class="step-body">
+        <strong>GoodKit's platform fee this month</strong>
+        <span>The 15% platform cut on every sale goes directly to Rez GRVL for the entire first month of GoodKit's launch.</span>
+      </div>
+    </div>
+    <div class="step">
+      <div class="step-num">3</div>
+      <div class="step-body">
+        <strong>Rez GRVL keeps riding</strong>
+        <span>Whatever they call it — the ride happens. Jan 9–10, 2027, Sacaton, AZ. Rez dogs included.</span>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- FOOTER -->
+<footer>
+  <span>© 2026 GoodKit — <a href="https://good-kit.com">good-kit.com</a></span>
+  <span>Follow <a href="https://www.instagram.com/rezgravel" target="_blank">@rezgravel</a></span>
+</footer>
+
+</body>
+</html>
