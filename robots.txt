@@ -1,0 +1,9 @@
+User-agent: *
+Allow: /
+Disallow: /admin
+Disallow: /goodkit-admin.html
+Disallow: /goodkit-seller-portal.html
+Disallow: /goodkit-ccx-dashboard.html
+Disallow: /flag-purchase
+
+Sitemap: https://good-kit.com/sitemap.xml

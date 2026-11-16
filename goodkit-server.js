@@ -2915,6 +2915,58 @@ app.get('/admin/backups', async (req, res) => {
 
 const SITE_URL = 'https://good-kit.com';
 
+// robots.txt
+app.get('/robots.txt', (req, res) => {
+  res.type('text/plain');
+  res.send(`User-agent: *
+Allow: /
+Disallow: /admin
+Disallow: /goodkit-admin.html
+Disallow: /goodkit-seller-portal.html
+Disallow: /goodkit-ccx-dashboard.html
+Disallow: /flag-purchase
+
+Sitemap: ${SITE_URL}/sitemap.xml`);
+});
+
+// sitemap.xml — static pages + all approved listings
+app.get('/sitemap.xml', (req, res) => {
+  try {
+    const listings = db.prepare("SELECT id, title, updated_at, created_at FROM listings WHERE status='approved' ORDER BY created_at DESC").all();
+    const now = new Date().toISOString().split('T')[0];
+    const staticPages = [
+      { url: '/', priority: '1.0', changefreq: 'daily' },
+      { url: '/marketplace', priority: '0.9', changefreq: 'hourly' },
+      { url: '/sell-your-gear.html', priority: '0.8', changefreq: 'monthly' },
+      { url: '/about', priority: '0.5', changefreq: 'monthly' },
+      { url: '/about.html', priority: '0.5', changefreq: 'monthly' },
+    ];
+    const listingUrls = listings.map(l => {
+      const slug = `${l.id}-${slugify(l.title)}`;
+      const lastmod = (l.updated_at || l.created_at || '').split('T')[0] || now;
+      return `  <url>
+    <loc>${SITE_URL}/listing/${slug}</loc>
+    <lastmod>${lastmod}</lastmod>
+    <changefreq>weekly</changefreq>
+    <priority>0.7</priority>
+  </url>`;
+    });
+    const staticUrls = staticPages.map(p => `  <url>
+    <loc>${SITE_URL}${p.url}</loc>
+    <lastmod>${now}</lastmod>
+    <changefreq>${p.changefreq}</changefreq>
+    <priority>${p.priority}</priority>
+  </url>`);
+    const xml = `<?xml version="1.0" encoding="UTF-8"?>
+<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">
+${staticUrls.join('\n')}
+${listingUrls.join('\n')}
+</urlset>`;
+    res.type('application/xml');
+    res.send(xml);
+  } catch(err) { res.status(500).send('Sitemap error'); }
+});
+
 function slugify(str) {
   return (str || '').toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '').slice(0, 60);
 }
