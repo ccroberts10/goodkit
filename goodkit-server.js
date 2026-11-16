@@ -696,6 +696,15 @@ app.use(cors({
 app.use('/webhook', express.raw({ type: 'application/json' }));
 app.use(express.json());
 
+// Tell crawlers not to index API responses
+app.use((req, res, next) => {
+  const host = req.headers.host || '';
+  if (host.startsWith('api.')) {
+    res.setHeader('X-Robots-Tag', 'noindex, nofollow');
+  }
+  next();
+});
+
 // ── Rate limiting ─────────────────────────────────────────────────────────────
 const apiLimiter = rateLimit({
   windowMs: 15 * 60 * 1000, // 15 minutes
@@ -2915,18 +2924,25 @@ app.get('/admin/backups', async (req, res) => {
 
 const SITE_URL = 'https://good-kit.com';
 
-// robots.txt
+// robots.txt — serve different rules for api subdomain vs main site
 app.get('/robots.txt', (req, res) => {
   res.type('text/plain');
-  res.send(`User-agent: *
+  const host = req.headers.host || '';
+  if (host.startsWith('api.')) {
+    // Block all crawling of the API subdomain
+    res.send(`User-agent: *\nDisallow: /`);
+  } else {
+    res.send(`User-agent: *
 Allow: /
 Disallow: /admin
 Disallow: /goodkit-admin.html
 Disallow: /goodkit-seller-portal.html
 Disallow: /goodkit-ccx-dashboard.html
 Disallow: /flag-purchase
+Disallow: /community/
 
 Sitemap: ${SITE_URL}/sitemap.xml`);
+  }
 });
 
 // sitemap.xml — static pages + all approved listings

@@ -5,5 +5,6 @@ Disallow: /goodkit-admin.html
 Disallow: /goodkit-seller-portal.html
 Disallow: /goodkit-ccx-dashboard.html
 Disallow: /flag-purchase
+Disallow: /community/
 
 Sitemap: https://good-kit.com/sitemap.xml
