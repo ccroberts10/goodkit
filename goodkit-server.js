@@ -559,6 +559,19 @@ db.exec(`
   `ALTER TABLE sales ADD COLUMN donation_recipient TEXT DEFAULT NULL`,
 ].forEach(sql => { try { db.exec(sql); } catch(e) {} });
 
+// Founding seller audit log
+db.exec(`CREATE TABLE IF NOT EXISTS founding_seller_log (
+  id TEXT PRIMARY KEY,
+  action TEXT NOT NULL,
+  email TEXT NOT NULL,
+  account_type TEXT NOT NULL,
+  admin_ip TEXT,
+  created_at TEXT DEFAULT (datetime('now'))
+)`);
+function logFoundingAction(action, email, accountType, ip) {
+  try { db.prepare("INSERT INTO founding_seller_log (id,action,email,account_type,admin_ip) VALUES (?,?,?,?,?)").run(require('crypto').randomUUID(), action, email, accountType, ip || null); } catch(e) {}
+}
+
 // One-time: auto-tag brands on existing listings that have no brand set
 try {
   const untagged = db.prepare("SELECT id, title, keywords FROM listings WHERE brand IS NULL AND status='approved'").all();
@@ -2628,6 +2641,7 @@ app.post('/admin/founding-sellers/grant', (req, res) => {
       if (!seller) return res.status(404).json({ error: 'Seller not found' });
       db.prepare("UPDATE seller_sessions SET seller_tier='founding' WHERE email=?").run(email);
     }
+    logFoundingAction('grant', email, type || 'individual', req.ip);
     res.json({ success: true, email, tier: 'founding', spots_remaining: FOUNDING_SELLER_CAP - count - 1 });
   } catch(err) { res.status(500).json({ error: err.message }); }
 });
@@ -2643,7 +2657,18 @@ app.post('/admin/founding-sellers/revoke', (req, res) => {
     } else {
       db.prepare("UPDATE seller_sessions SET seller_tier='standard' WHERE email=?").run(email);
     }
+    logFoundingAction('revoke', email, type || 'individual', req.ip);
     res.json({ success: true, email, tier: 'standard' });
+  } catch(err) { res.status(500).json({ error: err.message }); }
+});
+
+// GET /admin/founding-sellers/log
+app.get('/admin/founding-sellers/log', (req, res) => {
+  const key = req.query.adminKey || req.query.key;
+  if (key !== process.env.ADMIN_KEY) return res.status(401).json({ error: 'Unauthorized' });
+  try {
+    const log = db.prepare("SELECT * FROM founding_seller_log ORDER BY created_at DESC LIMIT 200").all();
+    res.json({ log });
   } catch(err) { res.status(500).json({ error: err.message }); }
 });
 
