@@ -17,7 +17,7 @@
     body{background:var(--bg);color:var(--ink);font-family:'Space Mono',monospace;-webkit-font-smoothing:antialiased;overflow-x:hidden;}
 
     /* NAV */
-    nav{position:fixed;top:0;left:0;right:0;z-index:100;background:var(--bg);border-bottom:1px solid var(--border);display:flex;align-items:center;justify-content:space-between;padding:0 24px;height:56px;}
+    nav{position:sticky;top:0;z-index:100;background:var(--bg);border-bottom:1px solid var(--border);display:flex;align-items:center;justify-content:space-between;padding:env(safe-area-inset-top,0px) 24px 0;height:calc(56px + env(safe-area-inset-top,0px));}
     .logo{font-family:'ABC Maxi Round','Nunito',system-ui,sans-serif;font-weight:900;font-size:22px;color:var(--ink);text-decoration:none;letter-spacing:-0.5px;}
     .logo .dot{color:var(--yellow);}
     .nav-links{display:flex;gap:8px;}
@@ -32,7 +32,7 @@
     .btn-outline:hover{border-color:var(--ink);}
 
     /* HERO */
-    .hero{padding:120px 24px 80px;max-width:900px;margin:0 auto;}
+    .hero{padding:80px 24px 80px;max-width:900px;margin:0 auto;}
     .hero-eyebrow{font-size:11px;letter-spacing:0.14em;color:var(--orange);text-transform:uppercase;margin-bottom:20px;}
     .hero h1{font-family:'ABC Maxi Round','Nunito',system-ui,sans-serif;font-weight:900;font-size:clamp(42px,7vw,80px);line-height:1.0;margin-bottom:24px;}
     .hero h1 em{color:var(--yellow);font-style:normal;}

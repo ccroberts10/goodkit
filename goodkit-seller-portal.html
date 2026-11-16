@@ -673,7 +673,7 @@ function renderShipBanner(){
   }else{
     dot.className='stripe-dot';
     banner.className='stripe-banner';
-    text.innerHTML='<strong>Add your shipping address</strong> — required to generate prepaid labels when items sell.';
+    text.innerHTML='<strong>⚠️ Add your shipping address</strong> — required before you can list. We use it to generate prepaid labels the moment your item sells.';
     btn.textContent='Add Address →';
   }
 }
@@ -1374,6 +1374,12 @@ async function submitListing(e){
 }
 
 function switchTab(name){
+  // Block create tab if no shipping address saved
+  if(name==='create' && SELLER && !SELLER.shipping_address?.street1){
+    showToast('Add your shipping address first — required for label generation','error');
+    openShipModal();
+    return;
+  }
   const names=['listings','offers','messages','sales','create'];
   document.querySelectorAll('.tab').forEach((t,i)=>t.classList.toggle('active',names[i]===name));
   document.querySelectorAll('.pane').forEach(p=>p.classList.remove('active'));

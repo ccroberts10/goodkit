@@ -1549,6 +1549,9 @@ app.post('/listings', upload.array('photos', 8), async (req, res) => {
     const sellerSession = db.prepare("SELECT * FROM seller_sessions WHERE email=? AND used=1 AND stripe_account_id IS NOT NULL AND stripe_account_id != '' ORDER BY created_at DESC LIMIT 1").get(seller_email);
     const stripe_account_id = client_stripe_id || sellerSession?.stripe_account_id || null;
     if (!stripe_account_id) return res.status(400).json({ error: 'Seller must complete Stripe onboarding first' });
+    // Require shipping address before listing — needed for label generation on sale
+    const addrCheck = db.prepare("SELECT ship_street1 FROM seller_sessions WHERE email=? AND used=1 AND ship_street1 IS NOT NULL AND ship_street1 != '' ORDER BY created_at DESC LIMIT 1").get(seller_email);
+    if (!addrCheck) return res.status(400).json({ error: 'Please add your shipping address in the portal before listing. It's required to generate prepaid labels when items sell.' });
     const priceInCents  = Math.round(parseFloat(price) * 100);
     const shippingCents = Math.round(parseFloat(shipping_estimate || 0) * 100);
     const weightOz      = parseInt(weight_oz || 0) || 0;
@@ -2124,6 +2127,25 @@ app.post('/webhook', async (req, res) => {
     const sale    = db.prepare("SELECT * FROM sales WHERE payment_intent_id=?").get(pi.id);
 
     if (listing && sale) {
+      // ── Buyer order confirmation email ────────────────────────────────────
+      const priceFmt = `$${(sale.amount / 100).toFixed(2)}`;
+      const isPickupConfirm = sale.delivery_type === 'local_pickup' || sale.delivery_type === 'pickup';
+      const shippingLine = isPickupConfirm
+        ? `<p style="font-size:13px;color:#555;margin:8px 0 0;">Delivery: <strong>Local pickup</strong> — the seller will reach out to arrange.</p>`
+        : `<p style="font-size:13px;color:#555;margin:8px 0 0;">A prepaid shipping label has been sent to the seller. You'll get a tracking number by email once it ships.</p>`;
+      await sendEmail(sale.buyer_email, `Order confirmed: ${listing.title}`, emailTemplate('Order Confirmed ✓',
+        `<p style="font-size:15px;color:#1A1A14;margin:0 0 16px;">Thanks for your purchase on GoodKit! Here's your order summary.</p>
+         <div style="background:#E8E0D0;padding:16px 20px;margin-bottom:20px;">
+           <p style="font-size:13px;color:#888;margin:0 0 4px;">Item</p>
+           <p style="font-size:18px;font-weight:700;color:#1A1A14;margin:0 0 12px;">${listing.title}</p>
+           <p style="font-size:13px;color:#888;margin:0 0 4px;">Total paid</p>
+           <p style="font-size:24px;font-weight:700;color:#FF5C1A;margin:0;">${priceFmt}</p>
+           ${shippingLine}
+         </div>
+         <p style="font-size:13px;color:#555;margin:0 0 16px;">Ship to: ${sale.buyer_name ? sale.buyer_name + ' · ' : ''}${sale.buyer_street1}, ${sale.buyer_city}, ${sale.buyer_state} ${sale.buyer_zip}</p>
+         <p style="font-size:12px;color:#888;margin:0;">Questions about your order? Reply to this email and we'll help.</p>`
+      )).catch(e => console.warn('[webhook] buyer confirm email failed:', e.message));
+
       const isPickup  = sale.delivery_type === 'local_pickup' || sale.delivery_type === 'pickup';
       const isDetour  = sale.delivery_type === 'detour';
       let labelUrl = null, trackingNumber = null, trackingUrl = null;
