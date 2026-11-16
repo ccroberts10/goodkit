@@ -1244,8 +1244,8 @@ async function loadFounding() {
   $('fndLogTable').innerHTML    = '<div style="padding:16px;color:var(--fg2);font-size:13px;">Loading…</div>';
   try {
     const [rosterRes, logRes] = await Promise.all([
-      fetch(API + '/admin/founding-sellers?adminKey=' + encodeURIComponent(KEY)),
-      fetch(API + '/admin/founding-sellers/log?adminKey=' + encodeURIComponent(KEY))
+      fetch(API_BASE + '/admin/founding-sellers?adminKey=' + encodeURIComponent(ADMIN_KEY)),
+      fetch(API_BASE + '/admin/founding-sellers/log?adminKey=' + encodeURIComponent(ADMIN_KEY))
     ]);
     const roster = await rosterRes.json();
     const log    = await logRes.json();
@@ -1297,7 +1297,7 @@ async function grantFounding() {
   if (!email) { $('fndMsg').textContent = 'Enter an email.'; return; }
   $('fndMsg').textContent = 'Granting…';
   try {
-    const r = await fetch(API+'/admin/founding-sellers/grant', { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({ adminKey: KEY, email, type }) });
+    const r = await fetch(API_BASE+'/admin/founding-sellers/grant', { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({ adminKey: ADMIN_KEY, email, type }) });
     const d = await r.json();
     if (d.success) { $('fndMsg').style.color='var(--green)'; $('fndMsg').textContent = `★ ${email} is now a Founding Seller. ${d.spots_remaining} spots remaining.`; $('fndEmail').value=''; loadFounding(); }
     else { $('fndMsg').style.color='red'; $('fndMsg').textContent = d.error || 'Error'; }
@@ -1310,7 +1310,7 @@ async function revokeFounding() {
   if (!email) { $('fndMsg').textContent = 'Enter an email.'; return; }
   if (!confirm(`Revoke founding status from ${email}?`)) return;
   try {
-    const r = await fetch(API+'/admin/founding-sellers/revoke', { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({ adminKey: KEY, email, type }) });
+    const r = await fetch(API_BASE+'/admin/founding-sellers/revoke', { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({ adminKey: ADMIN_KEY, email, type }) });
     const d = await r.json();
     if (d.success) { $('fndMsg').style.color='var(--fg2)'; $('fndMsg').textContent = `${email} reverted to standard.`; $('fndEmail').value=''; loadFounding(); }
     else { $('fndMsg').style.color='red'; $('fndMsg').textContent = d.error || 'Error'; }
