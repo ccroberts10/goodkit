@@ -105,7 +105,7 @@
         Got gear to sell? Add your team code <span id="ctaCode"></span> at listing.<br>
         <span style="font-weight:400;font-size:13px;color:#aaa;">2% of your sale goes straight to the team fund — automatically.</span>
       </div>
-      <a href="/sell" class="cta-btn">List your gear →</a>
+      <a href="/sell-your-gear.html" class="cta-btn">List your gear →</a>
     </div>
 
     <div class="section-head" id="listingsHead">Gear for sale</div>
@@ -133,7 +133,7 @@ function renderListings(listings) {
   $('listingsHead').textContent = `Gear for sale (${listings.length})`;
 
   if (!listings.length) {
-    grid.innerHTML = `<div class="empty-grid">No listings yet.<br>Be the first — <a href="/sell">list your gear</a> with your team code.</div>`;
+    grid.innerHTML = `<div class="empty-grid">No listings yet.<br>Be the first — <a href="/sell-your-gear.html">list your gear</a> with your team code.</div>`;
     return;
   }
 

@@ -966,7 +966,8 @@ IMPORTANT: Return raw JSON only — no markdown, no code fences, no explanation.
 app.get('/', (req, res) => res.sendFile(path.join(__dirname, 'index.html')));
 app.get('/shop', (req, res) => res.sendFile(path.join(__dirname, 'goodkit-marketplace.html')));
 app.get('/marketplace', (req, res) => res.sendFile(path.join(__dirname, 'goodkit-marketplace.html')));
-app.get('/sell',            (req, res) => res.sendFile(path.join(__dirname, 'goodkit-seller-portal.html')));
+app.get('/sell',            (req, res) => res.redirect(301, '/sell-your-gear.html'));
+app.get('/portal',         (req, res) => res.sendFile(path.join(__dirname, 'goodkit-seller-portal.html')));
 app.get('/sell-your-gear', (req, res) => res.sendFile(path.join(__dirname, 'sell-your-gear.html')));
 app.get('/about',          (req, res) => res.sendFile(path.join(__dirname, 'about.html')));
 app.get('/terms',          (req, res) => res.sendFile(path.join(__dirname, 'terms.html')));

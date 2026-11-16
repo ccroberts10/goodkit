@@ -481,7 +481,7 @@ async function loadRecent() {
     const listings = (data.listings || []).slice(0, 6);
     const grid = document.getElementById('recentGrid');
     if (!listings.length) {
-      grid.innerHTML = `<div style="grid-column:1/-1;text-align:center;padding:48px;color:var(--muted);font-family:'Space Mono',monospace;font-size:12px;">No listings yet. <a href="/sell" style="color:#F2C12E;">Be the first →</a></div>`;
+      grid.innerHTML = `<div style="grid-column:1/-1;text-align:center;padding:48px;color:var(--muted);font-family:'Space Mono',monospace;font-size:12px;">No listings yet. <a href="/sell-your-gear.html" style="color:#F2C12E;">Be the first →</a></div>`;
       return;
     }
     grid.innerHTML = listings.map(l => `
