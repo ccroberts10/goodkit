@@ -589,15 +589,7 @@ try {
   if (tagged > 0) console.log(`[migration] Auto-tagged ${tagged} listings with brands`);
 } catch(e) { console.error('[migration] brand auto-tag failed:', e.message); }
 
-// One-time: clear old DBP stripe_account_id values so sellers re-onboard with new GoodKit Stripe account
-// Only clears IDs that start with 'acct_' (Stripe Connect express accounts from DBP)
-// Safe to run on every deploy — has no effect once cleared
-try {
-  const cleared = db.prepare(
-    `UPDATE listings SET stripe_account_id = NULL WHERE stripe_account_id IS NOT NULL AND stripe_account_id != ''`
-  ).run();
-  if (cleared.changes > 0) console.log(`[migration] Cleared ${cleared.changes} old DBP stripe_account_id value(s)`);
-} catch(e) { console.error('[migration] stripe_account_id clear failed:', e.message); }
+// DBP stripe_account_id migration removed — was incorrectly clearing all Stripe IDs on every deploy
 
 // ── SHIPPING LABEL TIERS ─────────────────────────────────────────────────────
 // Flat-rate tiers (cents). These are what we CHARGE buyers.
