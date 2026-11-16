@@ -1627,7 +1627,7 @@ app.get('/stats', (req, res) => {
 
 app.get('/listings', (req, res) => {
   try {
-    const { category, maxPrice, condition } = req.query;
+    const { category, maxPrice, condition, q } = req.query;
     let listings = db.prepare(`
       SELECT l.*, c.name AS community_name, c.slug AS community_slug,
              c.logo_url AS community_logo, c.accent_color AS community_accent
@@ -1648,6 +1648,14 @@ app.get('/listings', (req, res) => {
     if (category) listings = listings.filter(l => l.category === category);
     if (maxPrice)  listings = listings.filter(l => l.price <= parseFloat(maxPrice));
     if (condition) listings = listings.filter(l => l.condition === condition);
+    if (q) {
+      const terms = q.toLowerCase().split(/\s+/).filter(Boolean);
+      listings = listings.filter(l => {
+        const haystack = [l.title, l.description, l.keywords, l.brand, l.category, l.size, l.condition]
+          .join(' ').toLowerCase();
+        return terms.every(t => haystack.includes(t));
+      });
+    }
     res.json({ success: true, listings });
   } catch(err) { res.status(500).json({ error: err.message }); }
 });

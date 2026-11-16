@@ -424,8 +424,12 @@ nav{position:sticky;top:0;z-index:100;background:var(--ink);display:flex;align-i
         </div>
         <div class="form-group">
           <label class="form-label">Search keywords <span style="font-weight:400;color:var(--ink-soft);font-size:12px;">helps buyers find your listing</span></label>
-          <input class="form-input" type="text" id="newKeywords" placeholder="e.g. Fox, 150mm, 31.6, carbon, XC race">
-          <div style="font-size:11px;color:var(--ink-soft);margin-top:4px;">Brand, size, specs, model year — comma separated</div>
+          <div id="keywordChips" style="display:flex;flex-wrap:wrap;gap:6px;align-items:center;border:1px solid var(--border);border-radius:8px;padding:8px 10px;min-height:44px;cursor:text;background:var(--surface);" onclick="document.getElementById('keywordInput').focus()">
+            <!-- chips injected here -->
+            <input id="keywordInput" type="text" placeholder="Type a keyword, press comma or Enter" style="border:none;outline:none;background:transparent;color:var(--ink);font-family:inherit;font-size:14px;flex:1;min-width:140px;padding:2px 0;" oninput="kwHandleInput(event)" onkeydown="kwHandleKey(event)" onblur="kwCommit()">
+          </div>
+          <input type="hidden" id="newKeywords">
+          <div style="font-size:11px;color:var(--ink-soft);margin-top:4px;">Brand, size, specs, model year — press Enter or comma after each</div>
         </div>
         <div class="form-group">
           <label class="form-label">CCX team code <span style="font-weight:400;color:var(--ink-soft);font-size:12px;">optional — earn 2% for your college team</span></label>
@@ -1194,7 +1198,7 @@ async function runAiAssist(){
 
     if(d.title) titleEl.value=d.title;
     if(d.description) descEl.value=d.description;
-    if(d.keywords) keyEl.value=d.keywords;
+    if(d.keywords) kwLoad(d.keywords);
 
     // Set condition
     if(d.condition){
@@ -1372,6 +1376,46 @@ async function submitListing(e){
     btn.disabled=false;btn.textContent='Publish Listing';
   }
 }
+
+// ── Keyword chip input ──────────────────────────────────────────
+let kwTags = [];
+function kwRender() {
+  const container = document.getElementById('keywordChips');
+  if (!container) return;
+  // remove old chips
+  container.querySelectorAll('.kw-chip').forEach(c => c.remove());
+  const input = document.getElementById('keywordInput');
+  kwTags.forEach((tag, i) => {
+    const chip = document.createElement('span');
+    chip.className = 'kw-chip';
+    chip.style.cssText = 'display:inline-flex;align-items:center;gap:5px;background:var(--accent);color:#fff;border-radius:20px;padding:2px 10px 2px 12px;font-size:12px;font-weight:600;white-space:nowrap;';
+    chip.innerHTML = `${tag}<button onclick="kwRemove(${i})" style="background:none;border:none;color:inherit;cursor:pointer;padding:0;font-size:14px;line-height:1;opacity:0.75;" title="Remove">×</button>`;
+    container.insertBefore(chip, input);
+  });
+  document.getElementById('newKeywords').value = kwTags.join(', ');
+}
+function kwAdd(raw) {
+  const val = raw.trim().replace(/,+$/, '').trim();
+  if (val && !kwTags.includes(val)) { kwTags.push(val); kwRender(); }
+}
+function kwRemove(i) { kwTags.splice(i, 1); kwRender(); }
+function kwHandleKey(e) {
+  if (e.key === 'Enter' || e.key === ',') {
+    e.preventDefault();
+    kwAdd(e.target.value);
+    e.target.value = '';
+  } else if (e.key === 'Backspace' && !e.target.value && kwTags.length) {
+    kwTags.pop(); kwRender();
+  }
+}
+function kwHandleInput(e) {
+  if (e.target.value.includes(',')) {
+    e.target.value.split(',').forEach(p => kwAdd(p));
+    e.target.value = '';
+  }
+}
+function kwCommit() { if (document.getElementById('keywordInput')?.value) { kwAdd(document.getElementById('keywordInput').value); document.getElementById('keywordInput').value=''; } }
+function kwLoad(csv) { kwTags = (csv||'').split(',').map(s=>s.trim()).filter(Boolean); kwRender(); }
 
 function switchTab(name){
   // Block create tab if no shipping address saved
