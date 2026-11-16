@@ -1005,9 +1005,9 @@ app.post('/seller/stripe-account', (req, res) => {
     if (!token || !stripe_account_id) return res.status(400).json({ error: 'token and stripe_account_id required' });
     const session = db.prepare("SELECT * FROM seller_sessions WHERE token=? AND used=1").get(token);
     if (!session) return res.status(401).json({ error: 'Invalid session' });
-    // Save to session (works even if seller has no listings yet)
-    db.prepare("UPDATE seller_sessions SET stripe_account_id=? WHERE token=?").run(stripe_account_id, token);
-    // Also update any existing listings
+    // Save to ALL sessions for this email — survives future sign-ins and listing changes
+    db.prepare("UPDATE seller_sessions SET stripe_account_id=? WHERE email=?").run(stripe_account_id, session.email);
+    // Mirror to listings for checkout transfer_data lookups
     db.prepare("UPDATE listings SET stripe_account_id=? WHERE seller_email=?").run(stripe_account_id, session.email);
     res.json({ success: true });
   } catch(err) { res.status(500).json({ error: err.message }); }
@@ -1477,7 +1477,12 @@ app.get('/seller/portal', (req, res) => {
       seller: (() => {
         const anySession = db.prepare("SELECT stripe_account_id, ship_name, ship_street1, ship_city, ship_state, ship_zip, ship_phone FROM seller_sessions WHERE email=? AND used=1 AND stripe_account_id IS NOT NULL AND stripe_account_id != '' ORDER BY created_at DESC LIMIT 1").get(email);
         const addrSession = db.prepare("SELECT ship_name, ship_street1, ship_city, ship_state, ship_zip, ship_phone FROM seller_sessions WHERE email=? AND used=1 AND ship_street1 IS NOT NULL ORDER BY created_at DESC LIMIT 1").get(email);
-        const stripeId = listings[0]?.stripe_account_id || session.stripe_account_id || anySession?.stripe_account_id || null;
+        // Session rows are the source of truth — listings.stripe_account_id is a cache that can be lost
+        const stripeId = session.stripe_account_id || anySession?.stripe_account_id || listings[0]?.stripe_account_id || null;
+        // Backfill listings if session has the ID but listings don't (e.g. after accidental clearing)
+        if (stripeId && stripeId.startsWith('acct_')) {
+          db.prepare("UPDATE listings SET stripe_account_id=? WHERE seller_email=? AND (stripe_account_id IS NULL OR stripe_account_id='')").run(stripeId, email);
+        }
         return {
           email,
           name: listings[0]?.seller_name || email,
