@@ -107,6 +107,25 @@ nav {
   position: relative;
   overflow: hidden;
 }
+/* Poster image — faded into the right side of the hero */
+.hero-poster {
+  position: absolute;
+  top: 0; right: -40px; bottom: 0;
+  width: 55%;
+  max-width: 480px;
+  background: url('/rez-grvl-poster.jpg') center top / cover no-repeat;
+  opacity: 0.18;
+  mask-image: linear-gradient(to right, transparent 0%, rgba(0,0,0,0.6) 30%, rgba(0,0,0,0.9) 100%);
+  -webkit-mask-image: linear-gradient(to right, transparent 0%, rgba(0,0,0,0.6) 30%, rgba(0,0,0,0.9) 100%);
+  z-index: 0;
+}
+@media (max-width: 600px) {
+  .hero-poster { width: 100%; right: 0; opacity: 0.12;
+    mask-image: linear-gradient(to bottom, transparent 0%, rgba(0,0,0,0.5) 50%);
+    -webkit-mask-image: linear-gradient(to bottom, transparent 0%, rgba(0,0,0,0.5) 50%);
+  }
+}
+.hero > *:not(.hero-poster) { position: relative; z-index: 1; }
 .hero::after {
   content: '';
   position: absolute;
@@ -114,6 +133,7 @@ nav {
   height: 32px;
   background: var(--bg);
   clip-path: ellipse(55% 100% at 50% 100%);
+  z-index: 2;
 }
 .hero-eyebrow {
   font-family: 'Space Mono', monospace;
@@ -365,6 +385,7 @@ footer a { color: var(--orange); text-decoration: none; }
 
 <!-- HERO -->
 <div class="hero">
+  <div class="hero-poster" aria-hidden="true"></div>
   <div class="hero-eyebrow">GoodKit × Rez GRVL</div>
   <h1>Every sale this month rides <em>for the rez.</em></h1>
   <p class="hero-sub">100% of GoodKit's first-month profits go to Rez GRVL — the Indigenous-led gravel ride taking on a corporate trademark to stay alive.</p>
