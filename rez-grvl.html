@@ -114,15 +114,18 @@ nav {
   width: 55%;
   max-width: 480px;
   background: url('/rez-grvl-poster.jpg') center top / cover no-repeat;
-  opacity: 0.18;
-  mask-image: linear-gradient(to right, transparent 0%, rgba(0,0,0,0.6) 30%, rgba(0,0,0,0.9) 100%);
-  -webkit-mask-image: linear-gradient(to right, transparent 0%, rgba(0,0,0,0.6) 30%, rgba(0,0,0,0.9) 100%);
+  opacity: 0.45;
+  mix-blend-mode: luminosity;
+  mask-image: linear-gradient(to right, transparent 0%, black 40%);
+  -webkit-mask-image: linear-gradient(to right, transparent 0%, black 40%);
   z-index: 0;
 }
 @media (max-width: 600px) {
-  .hero-poster { width: 100%; right: 0; opacity: 0.12;
-    mask-image: linear-gradient(to bottom, transparent 0%, rgba(0,0,0,0.5) 50%);
-    -webkit-mask-image: linear-gradient(to bottom, transparent 0%, rgba(0,0,0,0.5) 50%);
+  .hero-poster {
+    width: 100%; right: 0; opacity: 0.35;
+    background-position: center 15%;
+    mask-image: linear-gradient(to bottom, transparent 10%, black 60%);
+    -webkit-mask-image: linear-gradient(to bottom, transparent 10%, black 60%);
   }
 }
 .hero > *:not(.hero-poster) { position: relative; z-index: 1; }
