@@ -647,7 +647,7 @@ function renderStripeBanner(account){
   document.getElementById('stripeBannerText').innerHTML=ok
     ?`<strong>Payouts connected</strong> — you keep <strong>${pct}%</strong> of every sale, deposited straight to your bank within 2 days.${tierLabel}`
     :`<strong>Set up payouts</strong> — takes 2 minutes. You keep <strong>${pct}%</strong> of every sale, deposited straight to your bank.${tierLabel}`;
-  document.getElementById('stripeBtn').hidden=!!ok;
+  const sb=document.getElementById('stripeBtn');sb.hidden=!!ok;sb.style.display=ok?'none':'';
   renderShipBanner();
 }
 
