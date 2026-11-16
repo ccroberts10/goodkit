@@ -2948,43 +2948,7 @@ Sitemap: ${SITE_URL}/sitemap.xml`);
   }
 });
 
-// sitemap.xml — static pages + all approved listings
-app.get('/sitemap.xml', (req, res) => {
-  try {
-    const listings = db.prepare("SELECT id, title, updated_at, created_at FROM listings WHERE status='approved' ORDER BY created_at DESC").all();
-    const now = new Date().toISOString().split('T')[0];
-    const staticPages = [
-      { url: '/', priority: '1.0', changefreq: 'daily' },
-      { url: '/marketplace', priority: '0.9', changefreq: 'hourly' },
-      { url: '/sell-your-gear.html', priority: '0.8', changefreq: 'monthly' },
-      { url: '/about', priority: '0.5', changefreq: 'monthly' },
-      { url: '/about.html', priority: '0.5', changefreq: 'monthly' },
-    ];
-    const listingUrls = listings.map(l => {
-      const slug = `${l.id}-${slugify(l.title)}`;
-      const lastmod = (l.updated_at || l.created_at || '').split('T')[0] || now;
-      return `  <url>
-    <loc>${SITE_URL}/listing/${slug}</loc>
-    <lastmod>${lastmod}</lastmod>
-    <changefreq>weekly</changefreq>
-    <priority>0.7</priority>
-  </url>`;
-    });
-    const staticUrls = staticPages.map(p => `  <url>
-    <loc>${SITE_URL}${p.url}</loc>
-    <lastmod>${now}</lastmod>
-    <changefreq>${p.changefreq}</changefreq>
-    <priority>${p.priority}</priority>
-  </url>`);
-    const xml = `<?xml version="1.0" encoding="UTF-8"?>
-<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">
-${staticUrls.join('\n')}
-${listingUrls.join('\n')}
-</urlset>`;
-    res.type('application/xml');
-    res.send(xml);
-  } catch(err) { res.status(500).send('Sitemap error'); }
-});
+// sitemap.xml — REMOVED duplicate; real sitemap is registered below after CATEGORY_GROUPS
 
 function slugify(str) {
   return (str || '').toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '').slice(0, 60);
@@ -3300,6 +3264,8 @@ app.get('/sitemap.xml', (req, res) => {
       { loc: SITE_URL, priority: '1.0', changefreq: 'daily' },
       { loc: `${SITE_URL}/marketplace`, priority: '0.9', changefreq: 'hourly' },
       { loc: `${SITE_URL}/sell-your-gear`, priority: '0.8', changefreq: 'monthly' },
+      { loc: `${SITE_URL}/about`, priority: '0.5', changefreq: 'monthly' },
+      { loc: `${SITE_URL}/rez-grvl`, priority: '0.6', changefreq: 'weekly' },
       ...CATEGORY_GROUPS.map(g => ({
         loc: `${SITE_URL}/gear/${g.slug}`,
         priority: '0.8',
