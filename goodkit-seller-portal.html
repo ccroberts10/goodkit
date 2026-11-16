@@ -764,17 +764,30 @@ function renderStatTiles(stats){
 async function renderWallet(balance, buyingPower){
   const el=document.getElementById('walletContent');
   const fmt=c=>'$'+(c/100).toFixed(2);
+  const bonus=buyingPower-balance;
   el.innerHTML=`
     <div style="max-width:480px;">
-      <div style="background:#fff;border:2px solid #FF5C1A;border-radius:12px;padding:24px;margin-bottom:16px;">
-        <div style="font-size:13px;color:#888;margin-bottom:4px;">Available balance</div>
-        <div style="font-size:36px;font-weight:700;color:#FF5C1A;">${fmt(balance)}</div>
-        ${buyingPower>balance?`<div style="font-size:14px;color:#1A1A14;margin-top:6px;">Worth <strong>${fmt(buyingPower)}</strong> when buying on GoodKit <span style="font-size:12px;color:#888;">(10% boost)</span></div>`:''}
+      <!-- Buying power hero — shown first and largest -->
+      ${buyingPower>balance?`
+      <div style="background:linear-gradient(135deg,#1D5C3A 0%,#2a7a50 100%);border-radius:12px;padding:20px 22px;margin-bottom:16px;color:white;">
+        <div style="font-size:12px;font-weight:600;letter-spacing:0.06em;text-transform:uppercase;opacity:0.8;margin-bottom:6px;">Spend on GoodKit</div>
+        <div style="font-size:38px;font-weight:800;line-height:1;">${fmt(buyingPower)}</div>
+        <div style="font-size:13px;opacity:0.9;margin-top:6px;">1.10× buying power — your ${fmt(balance)} is worth <strong>${fmt(bonus)} more</strong> here than cashed out</div>
+        <a href="/" class="btn" style="display:inline-block;margin-top:14px;background:white;color:#1D5C3A;font-size:13px;font-weight:700;padding:9px 18px;border-radius:6px;text-decoration:none;">Browse gear →</a>
+      </div>`:''}
+      <!-- Balance + cash-out -->
+      <div style="background:var(--bg-subtle,#f8f8f5);border:1.5px solid var(--border);border-radius:12px;padding:20px 22px;margin-bottom:16px;">
+        <div style="display:flex;align-items:center;justify-content:space-between;gap:8px;flex-wrap:wrap;">
+          <div>
+            <div style="font-size:12px;color:#888;margin-bottom:2px;">Wallet balance</div>
+            <div style="font-size:28px;font-weight:700;color:#FF5C1A;">${fmt(balance)}</div>
+          </div>
+          <button class="btn btn-outline" style="font-size:13px;padding:9px 16px;white-space:nowrap;" onclick="confirmPayout(${balance},${buyingPower})">Transfer to bank</button>
+        </div>
+        <div style="font-size:12px;color:#888;margin-top:10px;">Free ACH · 1–2 business days${buyingPower>balance?` · <strong style="color:#1D5C3A;">you lose the ${fmt(bonus)} bonus if you cash out</strong>`:''}</div>
       </div>
-      <button class="btn btn-primary" style="width:100%;margin-bottom:8px;" onclick="requestPayout()">Transfer to Bank</button>
-      <p style="font-size:12px;color:#888;text-align:center;margin:0;">Free · transfers in 1–2 business days</p>
-      <div id="walletMsg" style="margin-top:12px;"></div>
-      <div style="margin-top:24px;">
+      <div id="walletMsg" style="margin-top:0;margin-bottom:12px;"></div>
+      <div>
         <div style="font-size:13px;font-weight:600;margin-bottom:12px;">Wallet history</div>
         <div id="walletHistory"><div class="spinner"></div></div>
       </div>
@@ -788,13 +801,34 @@ async function renderWallet(balance, buyingPower){
     hist.innerHTML=d.events.map(e=>`
       <div style="display:flex;justify-content:space-between;padding:8px 0;border-bottom:1px solid var(--border);font-size:13px;">
         <span style="color:#555;">${e.description||e.type}</span>
-        <span style="font-weight:600;color:${e.amount>0?'#2a7a2a':'#c0392b'};">${e.amount>0?'+':''}${fmt(e.amount)}</span>
+        <span style="font-weight:600;color:${e.amount>0?'#2a7a2a':'#c0392b'};">${e.amount>0?'+':''}$${Math.abs(e.amount/100).toFixed(2)}</span>
       </div>`).join('');
   }catch(e){document.getElementById('walletHistory').innerHTML='<div style="color:#888;font-size:13px;">Could not load history.</div>';}
 }
 
+function confirmPayout(balance, buyingPower){
+  const fmt=c=>'$'+(c/100).toFixed(2);
+  const bonus=buyingPower-balance;
+  // Build an inline confirmation that surfaces the tradeoff
+  const msg=document.getElementById('walletMsg');
+  msg.innerHTML=`
+    <div style="background:#fffbf0;border:1.5px solid #e6b800;border-radius:10px;padding:16px 18px;">
+      <div style="font-size:14px;font-weight:700;margin-bottom:8px;">Before you transfer…</div>
+      ${bonus>0?`
+      <div style="font-size:13px;color:#555;margin-bottom:12px;line-height:1.6;">
+        Your ${fmt(balance)} cashes out at face value.<br>
+        <strong>Spent on GoodKit it's worth ${fmt(buyingPower)}</strong> — a free ${fmt(bonus)} bonus from the 1.10× buying power. That disappears once you cash out.
+      </div>`:`<div style="font-size:13px;color:#555;margin-bottom:12px;">Transfer ${fmt(balance)} to your bank? Takes 1–2 business days.</div>`}
+      <div style="display:flex;gap:8px;flex-wrap:wrap;">
+        ${bonus>0?`<a href="/" class="btn btn-primary" style="font-size:13px;padding:9px 16px;text-decoration:none;">Shop gear (keep the bonus)</a>`:''}
+        <button class="btn btn-outline" style="font-size:13px;padding:9px 16px;" onclick="requestPayout()">Cash out ${fmt(balance)}</button>
+        <button class="btn btn-ghost" style="font-size:13px;padding:9px 14px;" onclick="document.getElementById('walletMsg').innerHTML=''">Cancel</button>
+      </div>
+    </div>`;
+  msg.scrollIntoView({behavior:'smooth',block:'nearest'});
+}
+
 async function requestPayout(){
-  if(!confirm('Transfer your wallet balance to your bank? This is free and takes 1–2 business days.')) return;
   try{
     const r=await fetch(API+'/seller/wallet/payout',{method:'POST',headers:{'Content-Type':'application/json','x-session-token':getToken()},body:JSON.stringify({token:getToken()})});
     const d=await r.json();
