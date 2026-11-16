@@ -207,6 +207,26 @@ nav{position:sticky;top:0;z-index:100;background:var(--ink);display:flex;align-i
       <button id="stripeBtn" class="btn btn-primary btn-xs" style="margin-left:auto;white-space:nowrap;" onclick="openPayoutSetup()" hidden>Set Up Payouts →</button>
     </div>
 
+    <!-- Founding Seller Donation Panel (founding sellers only) -->
+    <div id="donationSection" style="display:none;margin:16px 0;background:var(--bg-warm);border:1px solid #F2C12E44;border-radius:10px;padding:18px 20px;">
+      <div style="display:flex;align-items:center;gap:8px;margin-bottom:12px;">
+        <span style="font-size:15px;">🤝</span>
+        <span style="font-size:13px;font-weight:700;letter-spacing:.06em;text-transform:uppercase;">Your Nominated Cause</span>
+      </div>
+      <p style="font-size:13px;color:var(--muted);margin:0 0 14px;line-height:1.6;">As a Founding Seller, nominate an org that matters to you. It shows on your listings — buyers can see you're riding for something. Any extra donation comes from your cut, not the platform.</p>
+      <div style="display:flex;flex-direction:column;gap:10px;margin-bottom:14px;">
+        <input id="donRecipient" type="text" placeholder="Org name (e.g. DEVO, Trips for Kids, San Juan Trails Fund)" style="padding:9px 12px;border:1px solid var(--border);border-radius:7px;background:var(--bg);color:var(--text);font-size:13px;width:100%;box-sizing:border-box;" />
+        <input id="donRecipientUrl" type="url" placeholder="Website URL (optional)" style="padding:9px 12px;border:1px solid var(--border);border-radius:7px;background:var(--bg);color:var(--text);font-size:13px;width:100%;box-sizing:border-box;" />
+        <div style="display:flex;align-items:center;gap:10px;">
+          <label style="font-size:13px;color:var(--muted);white-space:nowrap;">Extra donation from your cut:</label>
+          <input id="donPct" type="number" min="0" max="30" value="0" oninput="renderDonationPreview(this.value)" style="width:64px;padding:7px 10px;border:1px solid var(--border);border-radius:7px;background:var(--bg);color:var(--text);font-size:13px;" />
+          <span style="font-size:13px;color:var(--muted);">%</span>
+        </div>
+        <p id="donPctPreview" style="margin:0;font-size:12px;color:var(--muted);"></p>
+      </div>
+      <button id="donSaveBtn" onclick="saveDonation()" class="btn btn-primary btn-sm">Save</button>
+    </div>
+
     <!-- Payout setup modal -->
     <div id="payoutModal" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,0.6);z-index:200;align-items:center;justify-content:center;padding:20px;">
       <div style="background:var(--bg);border-radius:12px;padding:28px;max-width:420px;width:100%;">
@@ -555,6 +575,7 @@ async function loadDash(tok){
       document.getElementById('navEmail').after(badge);
     }
     renderStripeBanner(d.account);
+    renderDonationSection(d.account);
     renderStats(d.listings||[], d.sales||[]);
     renderListings(d.listings||[]);
     renderOffers(d.offers||[], d.listings||[]);
@@ -583,6 +604,39 @@ async function loadCommunities(){
 }
 
 function logout(){clearS();SESSION=null;SELLER=null;showLogin();}
+
+function renderDonationSection(account) {
+  const isFounding = account && account.isFounding;
+  let el = document.getElementById('donationSection');
+  if (!el) return;
+  if (!isFounding) { el.style.display = 'none'; return; }
+  el.style.display = 'block';
+  document.getElementById('donRecipient').value  = account.donation_recipient     || '';
+  document.getElementById('donRecipientUrl').value = account.donation_recipient_url || '';
+  document.getElementById('donPct').value        = account.extra_donation_pct     || 0;
+  renderDonationPreview(account.extra_donation_pct || 0);
+}
+function renderDonationPreview(pct) {
+  const p = Math.min(30, Math.max(0, parseInt(pct) || 0));
+  const ex = document.getElementById('donPctPreview');
+  if (ex) ex.textContent = p > 0 ? `${p}% of your payout on every sale will go to your nominated org.` : 'No extra donation — buyers still see your nominated org on listings.';
+}
+async function saveDonation() {
+  const btn = document.getElementById('donSaveBtn');
+  btn.disabled = true; btn.textContent = 'Saving…';
+  const payload = {
+    token: SESSION,
+    donation_recipient:     document.getElementById('donRecipient').value.trim(),
+    donation_recipient_url: document.getElementById('donRecipientUrl').value.trim(),
+    extra_donation_pct:     parseInt(document.getElementById('donPct').value) || 0
+  };
+  try {
+    const r = await fetch(API+'/seller/donation', { method:'PATCH', headers:{'Content-Type':'application/json','x-session-token':SESSION}, body: JSON.stringify(payload) });
+    const d = await r.json();
+    if (d.success) { btn.textContent = '✓ Saved'; setTimeout(()=>{ btn.disabled=false; btn.textContent='Save'; }, 2000); }
+    else { btn.textContent = 'Error'; btn.disabled = false; }
+  } catch(e) { btn.textContent = 'Error'; btn.disabled = false; }
+}
 
 function renderStripeBanner(account){
   const ok=SELLER&&SELLER.stripe_connected;

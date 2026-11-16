@@ -551,6 +551,12 @@ db.exec(`
   // Founding seller tier
   `ALTER TABLE seller_sessions ADD COLUMN seller_tier TEXT DEFAULT 'standard'`,
   `ALTER TABLE shop_accounts ADD COLUMN seller_tier TEXT DEFAULT 'standard'`,
+  // Founding seller donation fields
+  `ALTER TABLE seller_sessions ADD COLUMN donation_recipient TEXT DEFAULT NULL`,
+  `ALTER TABLE seller_sessions ADD COLUMN donation_recipient_url TEXT DEFAULT NULL`,
+  `ALTER TABLE seller_sessions ADD COLUMN extra_donation_pct INTEGER DEFAULT 0`,
+  `ALTER TABLE sales ADD COLUMN seller_donation INTEGER DEFAULT 0`,
+  `ALTER TABLE sales ADD COLUMN donation_recipient TEXT DEFAULT NULL`,
 ].forEach(sql => { try { db.exec(sql); } catch(e) {} });
 
 // One-time: auto-tag brands on existing listings that have no brand set
@@ -1443,7 +1449,10 @@ app.get('/seller/portal', (req, res) => {
         isFounding: sellerTier === 'founding',
         sellerPct:  sellerTier === 'founding' ? 90 : (accountType === 'shop' ? 65 : 85),
         platformPct: sellerTier === 'founding' ? 10 : (accountType === 'shop' ? 35 : 15),
-        storefrontUrl: shopSlug ? `${SITE_URL}/shop/${shopSlug}` : null
+        storefrontUrl: shopSlug ? `${SITE_URL}/shop/${shopSlug}` : null,
+        donation_recipient:     session.donation_recipient || null,
+        donation_recipient_url: session.donation_recipient_url || null,
+        extra_donation_pct:     session.extra_donation_pct || 0
       },
       stats: {
         totalEarned:    sales.filter(s => s.status === 'paid_out').reduce((sum, s) => sum + s.seller_payout, 0),
@@ -1457,6 +1466,19 @@ app.get('/seller/portal', (req, res) => {
       listings, sales, offers, threads
     });
   } catch(err) { console.error('Portal error:', err); res.status(500).json({ error: err.message }); }
+});
+
+// Update seller donation preferences
+app.patch('/seller/donation', (req, res) => {
+  const token = req.headers['x-session-token'] || req.body.token || req.query.token;
+  if (!token) return res.status(401).json({ error: 'Missing token' });
+  const session = db.prepare("SELECT * FROM seller_sessions WHERE token=?").get(token);
+  if (!session || new Date(session.expires_at) < new Date()) return res.status(401).json({ error: 'Invalid or expired session' });
+  const { donation_recipient, donation_recipient_url, extra_donation_pct } = req.body;
+  const pct = Math.min(30, Math.max(0, parseInt(extra_donation_pct) || 0));
+  db.prepare("UPDATE seller_sessions SET donation_recipient=?, donation_recipient_url=?, extra_donation_pct=? WHERE id=?")
+    .run(donation_recipient || null, donation_recipient_url || null, pct, session.id);
+  res.json({ success: true, donation_recipient: donation_recipient || null, donation_recipient_url: donation_recipient_url || null, extra_donation_pct: pct });
 });
 
 // ── LISTINGS ─────────────────────────────────────────────────────────────────
@@ -1635,7 +1657,7 @@ app.post('/checkout', async (req, res) => {
     const buyerWantsPickup = deliveryType === 'local_pickup' && listing.allows_pickup;
     const resolvedDeliveryType = buyerWantsPickup ? 'local_pickup' : 'ship';
     const shippingCents = buyerWantsPickup ? 0 : (listing.shipping_estimate || 0);
-    const sellerSession = db.prepare("SELECT seller_tier FROM seller_sessions WHERE email=? ORDER BY created_at DESC LIMIT 1").get(listing.seller_email);
+    const sellerSession = db.prepare("SELECT seller_tier, account_type, extra_donation_pct, donation_recipient FROM seller_sessions WHERE email=? ORDER BY created_at DESC LIMIT 1").get(listing.seller_email);
     const split         = calculateSplit(listing.price, shippingCents, listing.ccx_code, sellerSession?.account_type || 'individual', sellerSession?.seller_tier || 'standard');
     const totalCharge   = listing.price + shippingCents;
     const labelInfo     = getLabelTier(listing.weight_oz);
@@ -1670,18 +1692,25 @@ app.post('/checkout', async (req, res) => {
     const saleId = uuidv4();
     const payoutAfter = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString(); // 7 days from purchase; updated to delivery+48h when carrier confirms
     const trailDonation = Math.round(split.platformFee * 100 * 0.10); // 10% of GoodKit's fee → IMBA
-    db.prepare(`INSERT INTO sales (id,listing_id,buyer_email,buyer_name,buyer_street1,buyer_city,buyer_state,buyer_zip,payment_intent_id,amount,seller_payout,platform_payout,delivery_type,label_tier,ccx_code,ccx_fund,payout_after,trail_donation) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`)
+    // Seller voluntary donation: extra_donation_pct% of their gross payout, capped 0–30%
+    const extraDonationPct  = Math.min(30, Math.max(0, sellerSession?.extra_donation_pct || 0));
+    const sellerDonation    = extraDonationPct > 0 ? Math.round(listing.price * (extraDonationPct / 100)) : 0;
+    const sellerNetAfterDon = Math.round(split.sellerNet * 100) - sellerDonation;
+    const donationRecipient = sellerSession?.donation_recipient || null;
+    db.prepare(`INSERT INTO sales (id,listing_id,buyer_email,buyer_name,buyer_street1,buyer_city,buyer_state,buyer_zip,payment_intent_id,amount,seller_payout,platform_payout,delivery_type,label_tier,ccx_code,ccx_fund,payout_after,trail_donation,seller_donation,donation_recipient) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`)
       .run(saleId, listingId, buyerEmail,
         buyerName || '', buyerStreet1 || '', buyerCity || '', buyerState || '', buyerZip || '',
         paymentIntent.id, listing.price,
-        Math.round(split.sellerNet * 100),
+        sellerNetAfterDon,
         Math.round(split.platformFee * 100),
         resolvedDeliveryType,
         labelInfo.tier,
         listing.ccx_code || null,
         Math.round((split.ccxFund || 0) * 100),
         payoutAfter,
-        trailDonation
+        trailDonation,
+        sellerDonation,
+        donationRecipient
       );
 
     res.json({
